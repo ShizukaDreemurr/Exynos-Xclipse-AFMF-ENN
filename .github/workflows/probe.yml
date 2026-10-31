@@ -17,18 +17,10 @@ jobs:
           }
           git clone --depth 1 -q https://github.com/google-ai-edge/LiteRT.git lr 2>&1 | tail -2
           cd lr
-          cat .bazelversion > ../bzl.txt; grep -n "android" .bazelrc | head -60 >> ../bzl.txt; ls >> ../bzl.txt
-          emit "bazelrc" ../bzl.txt
-          grep -n -i -B3 -A10 "samsung\|exynos" ci/build_pip_package_with_bazel.sh > ../pip.txt
-          emit "ci-pip" ../pip.txt
-          cat ci/tools/python/vendor_sdk/samsung/setup.py ci/tools/python/vendor_sdk/samsung/ai_edge_litert_sdk_samsung/__init__.py > ../sdkpy.txt
-          emit "sdk-python" ../sdkpy.txt
-          find . -path ./third_party -prune -o -ipath '*aot*' -ipath '*samsung*' -print > ../aot.txt
-          find litert/python -ipath '*samsung*' >> ../aot.txt
-          emit "aot-files" ../aot.txt
-          grep -rn -i "android_arm64" README.md docs g3doc 2>/dev/null | head -20 > ../doc.txt
-          emit "docs-android" ../doc.txt
-          ls litert/vendors/samsung/ litert/vendors/samsung/schema >> ../doc.txt 2>&1
-          emit "samsung-ls" ../doc.txt
-          grep -n -i "dlopen\|libenn\|\.so" litert/vendors/samsung/dispatch/enn_manager.cc | head -20 > ../enn.txt
-          emit "enn-so" ../enn.txt
+          emit "cmake-doc" docs/instructions/CMAKE_BUILD_INSTRUCTIONS.md
+          emit "samsung-dispatch-cmake" litert/vendors/samsung/dispatch/CMakeLists.txt
+          emit "samsung-cmake" litert/vendors/samsung/CMakeLists.txt
+          grep -n -i "samsung\|exynos\|VENDOR\|NPU" CMakeLists.txt litert/CMakeLists.txt litert/vendors/CMakeLists.txt 2>/dev/null | head -40 > ../cm.txt
+          emit "cmake-vendor-opts" ../cm.txt
+          ls cmake_example docker_build >> ../cm.txt; ls litert/cmake* 2>/dev/null >> ../cm.txt
+          emit "ls-cmake" ../cm.txt
