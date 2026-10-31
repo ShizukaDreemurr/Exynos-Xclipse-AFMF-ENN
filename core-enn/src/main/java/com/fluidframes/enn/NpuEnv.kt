@@ -40,7 +40,8 @@ object NpuEnv {
             val (w, h) = wh
             val be = LiteRtBackend(context, preferNpu = true)
             val ok = try { be.load(ls, w, h) } catch (t: Throwable) { sb.append("$ls: lỗi ${t.message}\n"); continue }
-            if (!ok) { sb.append("$ls: không nạp được (xem logcat LiteRtBackend)\n"); continue }
+            if (!ok) { val sz = try { context.assets.open("models/flow_$ls.tflite").use { it.available() } } catch (t: Throwable) { -1 }
+                sb.append("$ls: không nạp được (asset=${sz}B)\n${be.lastError}\n"); continue }
             val inp = java.nio.ByteBuffer.allocateDirect(6 * w * h * 4).order(java.nio.ByteOrder.nativeOrder())
             val out = java.nio.ByteBuffer.allocateDirect(5 * (w / 2) * (h / 2) * 4).order(java.nio.ByteOrder.nativeOrder())
             for (i in 0 until 6 * w * h) inp.putFloat(((i * 31) % 255) / 255f)

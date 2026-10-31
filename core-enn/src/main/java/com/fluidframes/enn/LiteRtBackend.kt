@@ -21,6 +21,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
     private var outArr = FloatArray(0)
     private var usedNpu = false
     private var env: Environment? = null
+    var lastError: String = ""
 
     override val name: String
         get() = if (usedNpu) "LiteRT/NPU" else "LiteRT/GPU"
@@ -28,6 +29,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
 
     override fun load(longSide: Int, procW: Int, procH: Int): Boolean {
         close()
+        lastError = ""
         if (preferNpu && env == null) env = NpuEnv.create(context)
         val path = "models/flow_$longSide.tflite"
         val attempts = buildList {
@@ -49,6 +51,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
                 return true
             } catch (t: Throwable) {
                 Log.w(TAG, "Không biên dịch được $path (npu=$npu): ${t.message}")
+                lastError += "[${if (npu) "NPU" else "GPU"}] ${t.javaClass.simpleName}: ${(t.message ?: "").take(400)}\n"
             }
         }
         return false
