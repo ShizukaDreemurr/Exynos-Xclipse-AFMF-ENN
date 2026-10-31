@@ -54,16 +54,22 @@ jobs:
           echo "::notice title=libs::$(cat libs.txt | tr '\n' ' ')"
           mkdir -p out && while read f; do cp "$f" out/; done < libs.txt
       - name: Publish prebuilt libs to branch
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
-          set -e
           mkdir -p /tmp/pub/prebuilt/arm64-v8a /tmp/pub/prebuilt/extra
           cp out/libLiteRtDispatch_Samsung.so out/libLiteRtCompilerPlugin_Samsung.so /tmp/pub/prebuilt/arm64-v8a/
           cp out/libLiteRt.so /tmp/pub/prebuilt/extra/
+          S=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip
+          for f in /tmp/pub/prebuilt/*/*.so; do $S --strip-unneeded "$f"; done
+          sizes=$(ls -l /tmp/pub/prebuilt/*/*.so | awk '{print $5" "$9}' | tr '\n' ';')
           cd /tmp/pub && git init -q && git checkout -q -b prebuilt-npu
           git config user.name ci; git config user.email ci@example.com
           git add -f prebuilt && git commit -qm "prebuilt Samsung NPU libs"
           git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
-          git push -f origin prebuilt-npu 2>&1 | tail -3 || { echo "::error title=publish::push failed"; exit 1; }
+          out=$(git push -f origin prebuilt-npu 2>&1); rc=$?
+          echo "::notice title=publish::rc=$rc sizes=$sizes $(echo $out | tail -c 500)"
+          exit $rc
       - uses: actions/upload-artifact@v4
         with:
           name: samsung-npu-dispatch
