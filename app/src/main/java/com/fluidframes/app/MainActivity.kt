@@ -42,7 +42,7 @@ class MainActivity : ComponentActivity() {
                     this,
                     ProjectionService.startIntent(this, result.resultCode, data),
                 )
-                status.text = "Đang chạy"
+                status.text = "Đang chạy. Mở game; HUD hiện chữ là OK."
             } else {
                 status.text = "Bạn đã từ chối quyền ghi màn hình"
             }
@@ -103,8 +103,9 @@ class MainActivity : ComponentActivity() {
     private fun requestProjection() {
         val mpm = getSystemService(MediaProjectionManager::class.java)
         val intent = if (Build.VERSION.SDK_INT >= 34) {
-            // Android 14+: ép chia sẻ toàn màn hình, không cho chọn 1 app.
-            mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+            // Android 14+: để người dùng chọn "Một ứng dụng" (game). Khi chỉ chụp 1 app, overlay của
+            // mình không nằm trong khung hình => hết lồng hình.
+            mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForUserChoice())
         } else {
             mpm.createScreenCaptureIntent()
         }

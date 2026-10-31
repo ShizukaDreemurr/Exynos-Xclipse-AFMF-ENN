@@ -41,6 +41,7 @@ class FramePipeline(
     @Volatile private var lastTier = ProcTier.P540
     @Volatile private var backendLabel = "-"
     @Volatile private var lastError = ""
+    @Volatile var hostLabel = "?"
 
     private var backend: InferenceBackend? = null
     private var backendChoice: FlowBackend? = null
@@ -71,7 +72,7 @@ class FramePipeline(
         val out = s.outFps.fps()
         return buildString {
             append("src %.0f → out %.0f fps  [%s %s]\n".format(s.srcFps.fps(), out, lastMode, tierLabel(lastTier)))
-            append("NN: %s\n".format(backendLabel))
+            append("NN: %s | host: %s | overlay: %s\n".format(backendLabel, hostLabel, if (overlayShown) "on" else "off"))
             append("pre %.1f | flow %.1f | warp %.1f | pres %.1f ms\n".format(
                 s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value))
             append("work %.1f ms | drop %.1f%% | skip %d | therm %d".format(
@@ -92,8 +93,10 @@ class FramePipeline(
                 lastSeq = cur.seq
                 stats.srcFps.tick()
                 stats.framesIn.incrementAndGet()
-                stats.ringDropped.set(ring.evicted.get())
-                stats.ringPushed.set(ring.pushed.get())
+                // Frame bị bỏ = frame đã push nhưng chưa từng được xử lý (evicted luôn ~100% vì ring luôn đầy).
+                val pushed = ring.pushed.get()
+                stats.ringPushed.set(pushed)
+                stats.ringDropped.set((pushed - stats.framesIn.get()).coerceAtLeast(0))
                 try {
                     process(prev, cur)
                 } catch (t: Throwable) {
@@ -164,7 +167,7 @@ class FramePipeline(
         }
         // Khoảng cách timestamp bất thường (pause, nguồn 60 fps, lag) -> không nội suy.
         val dtMs = (cur.timestampNs - prev.timestampNs) / 1e6
-        val gapOk = dtMs in 20.0..50.0
+        val gapOk = dtMs in 14.0..70.0
 
         // npuAvailable chỉ true khi đã nạp được (hoặc chưa thử và có backend).
         val npuCandidate = st.backend != FlowBackend.GPU && st.backend != FlowBackend.OFF && !backendFailed

@@ -82,6 +82,7 @@ class ProjectionService : Service() {
             onOverlayVisible = { v -> main.post { overlay?.setVideoVisible(v) } },
         )
         pipeline = fp
+        fp.hostLabel = if (host.trusted) "A11Y" else "APP(80%)"
         overlay = OverlayManager(
             host = host,
             surfaceListener = object : VideoOverlay.Listener {
