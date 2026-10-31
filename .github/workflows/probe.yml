@@ -1,0 +1,29 @@
+name: Probe LiteRT/Samsung
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe
+        run: |
+          set +e
+          mkdir -p p && cd p
+          emit() { # title file
+            msg=$(head -c 30000 "$2" | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::notice title=$1::${msg}"
+          }
+          curl -sS https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/group-index.xml > gi.xml 2>&1
+          tr '>' '>\n' < gi.xml | grep -o '<[a-z0-9-]* versions="[^"]*"' | head -80 > artifacts.txt
+          emit "litert-artifacts" artifacts.txt
+          V=2.3.2
+          curl -sS -L -o litert.aar "https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/litert/$V/litert-$V.aar"
+          unzip -l litert.aar 2>&1 | awk '{print $1, $4}' | head -80 > aar.txt
+          emit "litert-aar-contents" aar.txt
+          for R in contents/samples/litert/image_segmentation/kotlin_npu/android_jit/litert_npu_runtime_libraries contents/samples/litert/image_segmentation/kotlin_npu/android_jit/litert_npu_runtime_libraries/samsung_runtime; do
+            curl -sS -H "Authorization: Bearer ${{ github.token }}" "https://api.github.com/repos/google-ai-edge/litert-samples/$R" | grep -E '"(name|path|download_url)"' > tree_$(echo $R | tr '/' '_' | tail -c 20).txt
+          done
+          cat tree_*.txt > trees.txt
+          emit "samples-tree" trees.txt
