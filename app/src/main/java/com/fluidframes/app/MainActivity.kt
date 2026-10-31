@@ -53,8 +53,8 @@ class MainActivity : ComponentActivity() {
 
         status = TextView(this).apply {
             text = "Sẵn sàng"
-            textSize = 18f
-            gravity = Gravity.CENTER
+            textSize = 13f
+            gravity = Gravity.START
         }
         val start = Button(this).apply {
             text = "Bắt đầu"
@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
         }
         val probe = Button(this).apply {
             text = "Kiểm tra NPU (ENN)"
-            setOnClickListener { status.text = com.fluidframes.enn.NpuProbe.run() + com.fluidframes.enn.NpuEnv.describe(this@MainActivity) ; android.util.Log.i("NpuProbe", status.text.toString()) }
+            setOnClickListener { status.text = com.fluidframes.enn.NpuEnv.describe(this@MainActivity) + "\n\n" + com.fluidframes.enn.NpuProbe.run() ; android.util.Log.i("NpuProbe", status.text.toString()) }
         }
         val stop = Button(this).apply {
             text = "Dừng"
@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContentView(
-            LinearLayout(this).apply {
+            android.widget.ScrollView(this).apply { addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
                 setPadding(48, 48, 48, 48)
@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                 addView(start)
                 addView(probe)
                 addView(stop)
-            },
+            }) },
         )
     }
 
