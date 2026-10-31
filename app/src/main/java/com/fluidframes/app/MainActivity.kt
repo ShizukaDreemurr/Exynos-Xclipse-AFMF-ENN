@@ -84,11 +84,10 @@ class MainActivity : ComponentActivity() {
 
     private fun onStartClicked() {
         // Cần dịch vụ Trợ năng đang chạy HOẶC quyền SYSTEM_ALERT_WINDOW (phương án dự phòng, mờ 80%).
-        if (OverlayAccessibilityService.instance == null && !Settings.canDrawOverlays(this)) {
-            status.text = "Hãy bật \"Hiển thị trên ứng dụng khác\" rồi bấm Bắt đầu lại"
-            startActivity(
-                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
-            )
+        if (OverlayAccessibilityService.instance == null) {
+            // Cài lại APK sẽ tự tắt dịch vụ Trợ năng: phải bật lại.
+            status.text = "Hãy bật dịch vụ Trợ năng \"FluidFrames overlay\" rồi bấm Bắt đầu lại"
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
         if (Build.VERSION.SDK_INT >= 33 &&

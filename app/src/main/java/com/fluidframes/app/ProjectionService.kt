@@ -65,9 +65,9 @@ class ProjectionService : Service() {
         val a11y = OverlayAccessibilityService.instance
         val host: OverlayHost = when {
             a11y != null -> AccessibilityOverlayHost(a11y)
-            Settings.canDrawOverlays(this) -> AppOverlayHost(this)
+            // Không dùng overlay thường (alpha 0.8): hình bị trộn 20% với game thật => bóng ma (after image).
             else -> {
-                Toast.makeText(this, "Cần bật dịch vụ Trợ năng hoặc quyền hiển thị trên ứng dụng khác", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Hãy bật dịch vụ Trợ năng FluidFrames rồi bấm Bắt đầu lại", Toast.LENGTH_LONG).show()
                 return false
             }
         }

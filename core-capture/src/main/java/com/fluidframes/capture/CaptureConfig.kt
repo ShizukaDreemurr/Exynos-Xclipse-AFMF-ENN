@@ -7,13 +7,13 @@ import android.view.Surface
 
 /**
  * Kích thước VirtualDisplay/ImageReader.
- * [maxImages] phải > capacity của ring + số frame pipeline giữ cùng lúc (mặc định 4 + 2).
+ * [maxImages] phải > capacity của ring + số frame pipeline giữ cùng lúc (mặc định 4 + 2, +1 vì drain acquire TRƯỚC khi ring đẩy frame cũ ra, +1 dự phòng).
  */
 data class CaptureConfig(
     val width: Int,
     val height: Int,
     val densityDpi: Int,
-    val maxImages: Int = 6,
+    val maxImages: Int = 8,
 ) {
     fun sameSize(o: CaptureConfig) = width == o.width && height == o.height
 
