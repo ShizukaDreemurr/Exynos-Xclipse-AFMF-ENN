@@ -242,7 +242,8 @@ class FramePipeline(
         val workMs = (System.nanoTime() - t0) / 1e6f + lastWarpMs + queueMs.coerceAtLeast(0f)
         stats.workMs.add(workMs)
 
-        val ok = native.finish(interp, nnFlowReady = interp && useNn)
+        val gapMs = (dtMs.toFloat() / 2f - 1f).coerceIn(0f, 25f)
+        val ok = native.finish(interp, nnFlowReady = interp && useNn, gapMs = gapMs)
         if (!ok) lastError = native.lastError() else lastError = ""
 
         val ns = native.stats()
@@ -266,6 +267,6 @@ class FramePipeline(
 
     private companion object {
         const val TAG = "FramePipeline"
-        const val HIDE_AFTER_FRAMES = 90
+        const val HIDE_AFTER_FRAMES = 20
     }
 }

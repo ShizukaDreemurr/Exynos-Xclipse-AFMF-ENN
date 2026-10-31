@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstring>
 
@@ -885,12 +886,18 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
 // Giai đoạn 2
 // ---------------------------------------------------------------------------------------------
 
-bool Pipeline::Finish(bool interp, bool nnFlowReady) {
+bool Pipeline::Finish(bool interp, bool nnFlowReady, float gapMs) {
     std::lock_guard<std::mutex> lk(mu_);
     if (!curPrev_ || !curCur_) return FailMsg("Finish gọi khi chưa có Begin");
     presentWaitMs_ = 0.0;
     bool ok = true;
-    if (interp) ok = OutPass(1, nnFlowReady, /*acquire=*/false, /*release=*/false);
+    if (interp) {
+        ok = OutPass(1, nnFlowReady, /*acquire=*/false, /*release=*/false);
+        // Nhịp present: frame thật cách frame nội suy đúng nửa chu kỳ nguồn.
+        if (gapMs > 0.5f && gapMs < 60.f) {
+            std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int64_t>(gapMs * 1000.f)));
+        }
+    }
     const bool ok2 = OutPass(0, false, /*acquire=*/false, /*release=*/true);
     stats_[7] = static_cast<float>(presentWaitMs_);
     curPrev_ = curCur_ = nullptr;

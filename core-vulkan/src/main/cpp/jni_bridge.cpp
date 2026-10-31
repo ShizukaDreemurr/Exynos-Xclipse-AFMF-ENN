@@ -68,8 +68,8 @@ FN(jobject, nativeNnFlow)(JNIEnv* env, jclass, jlong h) {
     return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
 }
 
-FN(jboolean, nativeFinish)(JNIEnv*, jclass, jlong h, jboolean interp, jboolean nnFlowReady) {
-    return P(h)->Finish(interp == JNI_TRUE, nnFlowReady == JNI_TRUE) ? JNI_TRUE : JNI_FALSE;
+FN(jboolean, nativeFinish)(JNIEnv*, jclass, jlong h, jboolean interp, jboolean nnFlowReady, jfloat gapMs) {
+    return P(h)->Finish(interp == JNI_TRUE, nnFlowReady == JNI_TRUE, gapMs) ? JNI_TRUE : JNI_FALSE;
 }
 
 FN(jboolean, nativePresentReal)(JNIEnv* env, jclass, jlong h, jobject cur) {

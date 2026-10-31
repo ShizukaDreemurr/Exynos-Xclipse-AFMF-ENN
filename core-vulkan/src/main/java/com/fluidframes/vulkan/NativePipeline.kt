@@ -46,8 +46,9 @@ class NativePipeline private constructor(private var handle: Long) {
     /** Direct buffer NCHW float32 [1,5,procH/2,procW/2]. */
     fun nnFlow(): ByteBuffer? = NativeBridge.nativeNnFlow(handle)?.order(ByteOrder.nativeOrder())
 
-    fun finish(interp: Boolean, nnFlowReady: Boolean): Boolean =
-        NativeBridge.nativeFinish(handle, interp, nnFlowReady)
+    /** [gapMs]: thời gian chờ giữa present frame nội suy và frame thật (≈ nửa chu kỳ nguồn). */
+    fun finish(interp: Boolean, nnFlowReady: Boolean, gapMs: Float): Boolean =
+        NativeBridge.nativeFinish(handle, interp, nnFlowReady, gapMs)
 
     fun presentReal(cur: HardwareBuffer): Boolean = NativeBridge.nativePresentReal(handle, cur)
 

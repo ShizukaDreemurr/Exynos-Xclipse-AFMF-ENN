@@ -54,8 +54,9 @@ public:
     // Giai đoạn 1: import 2 frame, preprocess, (tùy chọn) block-match. Chặn tới khi GPU xong.
     int Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool blockMatch);
 
-    // Giai đoạn 2: present [nội suy, frame thật] hoặc chỉ [frame thật].
-    bool Finish(bool interp, bool nnFlowReady);
+    // Giai đoạn 2: present [nội suy, đợi gapMs, frame thật] hoặc chỉ [frame thật].
+    // gapMs = nửa chu kỳ nguồn: giữ nhịp đều 60 fps (không present dồn cục).
+    bool Finish(bool interp, bool nnFlowReady, float gapMs);
 
     // Chỉ present frame thật (passthrough).
     bool PresentReal(AHardwareBuffer* cur);
