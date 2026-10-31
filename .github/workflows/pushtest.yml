@@ -1,0 +1,14 @@
+name: pushtest
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  t:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          mkdir /tmp/pub && cd /tmp/pub && git init -q && git checkout -q -b prebuilt-test
+          git config user.name ci; git config user.email ci@example.com
+          echo hi > a.txt && git add a.txt && git commit -qm t
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          out=$(git push -f origin prebuilt-test 2>&1); echo "::notice title=push::$(echo $out | head -c 600) rc=$?"
