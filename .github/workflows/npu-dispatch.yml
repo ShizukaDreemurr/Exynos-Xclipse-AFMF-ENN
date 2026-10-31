@@ -18,7 +18,7 @@ jobs:
             echo "::notice title=litecore $v::$code"
           done
       - name: Clone LiteRT
-        run: git clone --depth 1 https://github.com/google-ai-edge/LiteRT.git
+        run: git clone --depth 1 --branch v2.3.2 https://github.com/google-ai-edge/LiteRT.git
       - name: Tools
         run: |
           sudo apt-get update && sudo apt-get install -y clang ninja-build python3-pip
