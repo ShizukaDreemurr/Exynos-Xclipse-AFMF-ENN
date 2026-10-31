@@ -32,14 +32,23 @@ object NpuEnv {
         return "libs in APK: ${files.joinToString()}\nAccelerators: $accs"
     }
 
-    /** Nhật ký (mức W/E trở lên) của chính tiến trình app, dòng cuối. */
+    /** Nhật ký liên quan LiteRT/ENN/Samsung của app (không lọc theo pid để tránh lỗi quyền). */
     fun ownLog(maxChars: Int = 3500): String = try {
-        val pid = android.os.Process.myPid()
-        val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=$pid", "-v", "brief", "*:I"))
-        val lines = p.inputStream.bufferedReader().readLines()
-            .filter { !it.contains("Choreographer") && !it.contains("OpenGLRenderer") && !it.contains("ViewRootImpl") }
-        lines.joinToString("\n").takeLast(maxChars)
+        val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "1500", "-v", "brief"))
+        val all = p.inputStream.bufferedReader().readLines()
+        val err = p.errorStream.bufferedReader().readText().take(200)
+        val key = Regex("litert|enn|samsung|dispatch|npu|compile|tflite|ai_edge|flatbuffer|plugin", RegexOption.IGNORE_CASE)
+        val hit = all.filter { key.containsMatchIn(it) && !it.contains("NpuProbe") }
+        "(${all.size} dòng log, ${hit.size} khớp) $err\n" + hit.joinToString("\n").takeLast(maxChars)
     } catch (t: Throwable) { "logcat lỗi: ${t.message}" }
+
+    /** Thử nạp model bằng CPU để biết file model có đọc được không. */
+    fun cpuLoadTest(context: Context): String = try {
+        val m = com.google.ai.edge.litert.CompiledModel.create(
+            context.assets, "models/flow_640.tflite",
+            com.google.ai.edge.litert.CompiledModel.Options(com.google.ai.edge.litert.Accelerator.CPU))
+        m.close(); "CPU load OK"
+    } catch (t: Throwable) { "CPU load lỗi: ${t.javaClass.simpleName}: ${(t.message ?: "").take(300)}" }
 
     /** Chạy thử model đã AOT trên NPU: nạp, chạy 40 lần, trả về mô tả + ms trung bình. */
     fun benchmark(context: Context): String {
@@ -60,7 +69,7 @@ object NpuEnv {
             sb.append("$ls ${w}x$h: ${be.name} ${if (n > 0) "%.2f ms".format(tot / n) else "chạy lỗi"} onNpu=${be.onNpu}\n")
             be.close()
         }
-        if (sb.contains("không nạp được")) sb.append("\n--- log ---\n").append(ownLog())
+        if (sb.contains("không nạp được")) sb.append("\n").append(cpuLoadTest(context)).append("\n--- log ---\n").append(ownLog())
         return sb.toString()
     }
 }
