@@ -26,7 +26,16 @@ jobs:
           gradle-version: "8.9"
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          set +e
+          gradle :app:assembleDebug --stacktrace > build.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            # Đưa lỗi lên annotation để đọc được mà không cần tải log.
+            msg=$(grep -E "^e: |error:|warning: .*unresolved|FAILED|What went wrong|Execution failed|Caused by|> .*(not found|No such|Could not|Failed)" build.log | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=Build failed::${msg}"
+          fi
+          exit $code
 
       - uses: actions/upload-artifact@v4
         with:
