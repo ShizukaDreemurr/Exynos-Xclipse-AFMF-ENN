@@ -11,12 +11,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      # Runner đã có sẵn Android SDK; chỉ cần chấp nhận license để AGP tự tải NDK/CMake.
+      - name: Accept Android licenses
+        run: yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       # Không cần gradle-wrapper.jar: action tự cài Gradle 8.9
       - uses: gradle/actions/setup-gradle@v4
