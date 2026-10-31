@@ -126,7 +126,7 @@ class ProjectionService : Service() {
 
         try {
             val projection = getSystemService(MediaProjectionManager::class.java)
-                .getMediaProjection(resultCode, data)
+                .getMediaProjection(resultCode, data)!!
             engine = ScreenCaptureEngine(
                 projection = projection,
                 ring = ring,
