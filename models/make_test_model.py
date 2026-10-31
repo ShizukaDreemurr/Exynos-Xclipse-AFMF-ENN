@@ -48,8 +48,10 @@ def main():
             from ai_edge_litert.aot import aot_compile as aot
             from ai_edge_litert.aot.vendors.samsung import target as st
             tgt = st.Target(st.SocModel.E9965)
-            res = aot.aot_compile(raw, output_dir=os.path.join(a.out, f"c{long_side}"), target=tgt)
+            res = aot.aot_compile(raw, output_dir=os.path.join(a.out, f"c{long_side}"), target=tgt, keep_going=False)
             print("compiled", res)
+            for attr in ("failed_backends","models_with_backend"):
+                print(attr, getattr(res, attr, None))
 
 
 if __name__ == "__main__":
