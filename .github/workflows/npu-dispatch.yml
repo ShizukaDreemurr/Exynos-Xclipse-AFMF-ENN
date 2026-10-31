@@ -1,0 +1,53 @@
+name: build-samsung-npu-dispatch
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/npu-dispatch.yml']
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe LiteCore download
+        run: |
+          for v in 1.2.1 1.1.0; do
+            code=$(curl -sS -o /tmp/lc.tgz -w '%{http_code} %{size_download}' -L --max-time 120 "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v$v.tar.gz" || true)
+            echo "::notice title=litecore $v::$code"
+          done
+      - name: Clone LiteRT
+        run: git clone --depth 1 https://github.com/google-ai-edge/LiteRT.git
+      - name: Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y clang ninja-build python3-pip
+          pip3 install --break-system-packages cmake==3.28.3
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27
+      - name: Configure host tools
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        working-directory: LiteRT/litert
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON > ../../cfg1.log 2>&1 || { echo "::error title=cfg1::$(tail -c 900 ../../cfg1.log | tr '\n' ' ')"; exit 1; }
+      - name: Configure android
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        working-directory: LiteRT/litert
+        run: |
+          HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build 2>/dev/null && pwd || true)"
+          cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON ${HOST_DIR:+-DTFLITE_HOST_TOOLS_DIR=$HOST_DIR} > ../../cfg2.log 2>&1 || { echo "::error title=cfg2::$(tail -c 900 ../../cfg2.log | tr '\n' ' ')"; exit 1; }
+          echo "::notice title=samsung cfg::$(grep -i -E 'samsung|litecore' ../../cfg2.log | tr '\n' ' ' | head -c 700)"
+      - name: Build
+        working-directory: LiteRT/litert
+        run: |
+          cmake --build cmake_build_android_arm64 --target dispatch_api_samsung_so --parallel > ../../build.log 2>&1 || { echo "::error title=build::$(grep -E 'error|Error' ../../build.log | tail -8 | tr '\n' ' ' | head -c 900)"; exit 1; }
+      - name: Collect
+        run: |
+          find LiteRT/litert/cmake_build_android_arm64 -name 'libLiteRt*.so' -o -name 'libtensorflow*.so' | tee libs.txt
+          echo "::notice title=libs::$(cat libs.txt | tr '\n' ' ')"
+          mkdir -p out && while read f; do cp "$f" out/; done < libs.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: samsung-npu-dispatch
+          path: out/
