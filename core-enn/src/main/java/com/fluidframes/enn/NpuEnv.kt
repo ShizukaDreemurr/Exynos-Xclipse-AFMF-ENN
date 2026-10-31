@@ -32,6 +32,15 @@ object NpuEnv {
         return "libs in APK: ${files.joinToString()}\nAccelerators: $accs"
     }
 
+    /** Nhật ký (mức W/E trở lên) của chính tiến trình app, dòng cuối. */
+    fun ownLog(maxChars: Int = 3500): String = try {
+        val pid = android.os.Process.myPid()
+        val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=$pid", "-v", "brief", "*:I"))
+        val lines = p.inputStream.bufferedReader().readLines()
+            .filter { !it.contains("Choreographer") && !it.contains("OpenGLRenderer") && !it.contains("ViewRootImpl") }
+        lines.joinToString("\n").takeLast(maxChars)
+    } catch (t: Throwable) { "logcat lỗi: ${t.message}" }
+
     /** Chạy thử model đã AOT trên NPU: nạp, chạy 40 lần, trả về mô tả + ms trung bình. */
     fun benchmark(context: Context): String {
         val sizes = listOf(640 to (640 to 288), 960 to (960 to 416), 1280 to (1280 to 576))
@@ -51,6 +60,7 @@ object NpuEnv {
             sb.append("$ls ${w}x$h: ${be.name} ${if (n > 0) "%.2f ms".format(tot / n) else "chạy lỗi"} onNpu=${be.onNpu}\n")
             be.close()
         }
+        if (sb.contains("không nạp được")) sb.append("\n--- log ---\n").append(ownLog())
         return sb.toString()
     }
 }
