@@ -1,0 +1,40 @@
+name: aot-compile-model
+on:
+  workflow_dispatch:
+  push:
+    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py']
+permissions:
+  contents: write
+jobs:
+  aot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: |
+          pip install tensorflow-cpu numpy > /tmp/pip1.log 2>&1 || { echo "::error title=pip1::$(tail -c 600 /tmp/pip1.log | tr '\n' ' ')"; exit 1; }
+          pip install ai-edge-litert-nightly ai-edge-litert-sdk-samsung-nightly > /tmp/pip2.log 2>&1 || { echo "::error title=pip2::$(tail -c 900 /tmp/pip2.log | tr '\n' ' ')"; exit 1; }
+          echo "::notice title=pip::$(pip list 2>/dev/null | grep -i -E 'litert|tensorflow' | tr '\n' ' ')"
+      - name: Build + AOT compile
+        working-directory: models
+        run: |
+          python make_test_model.py --compile > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tail -c 1500 /tmp/aot.log | tr '\n' ' ')"; exit 1; }
+          echo "::notice title=aotlog::$(tail -c 800 /tmp/aot.log | tr '\n' ' ')"
+          find out_models -name '*.tflite' | xargs ls -l | awk '{print $5" "$9}' | tr '\n' ';' > /tmp/files.txt
+          echo "::notice title=files::$(cat /tmp/files.txt)"
+      - name: Publish compiled models
+        if: success()
+        run: |
+          mkdir -p /tmp/pm/models && cd models
+          for n in 640 960 1280; do f=$(find out_models/c$n -name '*Samsung*' -name '*.tflite' | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
+          ls -l /tmp/pm/models
+          cd /tmp/pm && git init -q && git checkout -q -b prebuilt-models
+          git config user.name ci; git config user.email ci@example.com
+          git add -f models && git commit -qm "compiled models" 
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          out=$(git push -f origin prebuilt-models 2>&1); rc=$?
+          echo "::notice title=publish::rc=$rc $(echo $out | tail -c 300)"; exit $rc
