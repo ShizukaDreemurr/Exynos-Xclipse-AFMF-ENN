@@ -17,10 +17,14 @@ jobs:
           }
           git clone --depth 1 -q https://github.com/google-ai-edge/LiteRT.git lr 2>&1 | tail -2
           cd lr
-          find . -ipath '*samsung*' -o -ipath '*exynos*' | grep -v '/\.git/' | head -120 > ../files.txt
-          emit "samsung-files" ../files.txt
-          grep -rIl -i "exynos\|litecore\|samsung" --include=WORKSPACE --include=*.bzl --include=*.bazel --include=*.md --include=*.sh --include=*.bazelrc --include=.bazelrc . 2>/dev/null | head -60 > ../refs.txt
-          emit "samsung-refs" ../refs.txt
-          for f in $(find litert/vendors/samsung -name 'README*' 2>/dev/null | head -3); do emit "readme-$f" $f; done
-          grep -rn -i "exynos_ai_litecore\|EXYNOS_AI_LITECORE\|litecore" WORKSPACE third_party .bazelrc 2>/dev/null | head -40 > ../ws.txt
-          emit "workspace-litecore" ../ws.txt
+          ls litert/vendors/samsung/compiler/builders | grep -v BUILD | sed 's/_op_builder.*//' | sort -u | tr '\n' ' ' > ../ops.txt
+          emit "builders" ../ops.txt
+          emit "samsung-kotlin-readme" litert/samples/image_segmentation/kotlin_npu/android/README.md
+          grep -n -i -B2 -A12 "samsung\|exynos" litert/runtime/dispatch/README.md > ../disp.txt
+          emit "dispatch-readme" ../disp.txt
+          emit "enn_type.h" litert/vendors/samsung/dispatch/enn_type.h
+          emit "enn_manager.cc" litert/vendors/samsung/dispatch/enn_manager.cc
+          emit "dispatch-BUILD" litert/vendors/samsung/dispatch/BUILD
+          emit "samsung_build_defs" litert/vendors/samsung/samsung_build_defs.bzl
+          emit "exynos-BUILD" third_party/exynos_ai_litecore/exynos_ai_litecore.BUILD
+          emit "litecore-workspace" third_party/exynos_ai_litecore/workspace.bzl
