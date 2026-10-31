@@ -17,6 +17,13 @@ jobs:
             code=$(curl -sS -o /tmp/lc.tgz -w '%{http_code} %{size_download}' -L --max-time 120 "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v$v.tar.gz" || true)
             echo "::notice title=litecore $v::$code"
           done
+      - name: Fetch LiteCore headers
+        run: |
+          mkdir -p /tmp/lc && curl -sSL --max-time 300 -o /tmp/lc.tgz "https://soc-developer.semiconductor.samsung.com/api/v1/resource/download-file/ai-litecore-ubuntu2404-v1.1.0.tar.gz"
+          tar xzf /tmp/lc.tgz -C /tmp/lc
+          H=$(dirname $(find /tmp/lc -name graph_wrapper_api.h | head -1))
+          echo "LCH=$H" >> $GITHUB_ENV
+          echo "::notice title=lch::$H"
       - name: Clone LiteRT
         run: git clone --depth 1 --branch v2.3.2 https://github.com/google-ai-edge/LiteRT.git
       - name: Tools
@@ -31,14 +38,14 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         working-directory: LiteRT/litert
-        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON > ../../cfg1.log 2>&1 || { echo "::error title=cfg1::$(tail -c 900 ../../cfg1.log | tr '\n' ' ')"; exit 1; }
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON -DLITECORE_HEADERS_DIR=$LCH > ../../cfg1.log 2>&1 || { echo "::error title=cfg1::$(tail -c 900 ../../cfg1.log | tr '\n' ' ')"; exit 1; }
       - name: Configure android
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         working-directory: LiteRT/litert
         run: |
           HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build 2>/dev/null && pwd || true)"
-          cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON ${HOST_DIR:+-DTFLITE_HOST_TOOLS_DIR=$HOST_DIR} > ../../cfg2.log 2>&1 || { echo "::error title=cfg2::$(tail -c 900 ../../cfg2.log | tr '\n' ' ')"; exit 1; }
+          cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON -DLITECORE_HEADERS_DIR=$LCH ${HOST_DIR:+-DTFLITE_HOST_TOOLS_DIR=$HOST_DIR} > ../../cfg2.log 2>&1 || { echo "::error title=cfg2::$(tail -c 900 ../../cfg2.log | tr '\n' ' ')"; exit 1; }
           echo "::notice title=samsung cfg::$(grep -i -E 'samsung|litecore' ../../cfg2.log | tr '\n' ' ' | head -c 700)"
       - name: Build
         working-directory: LiteRT/litert
