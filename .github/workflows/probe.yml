@@ -1,0 +1,17 @@
+name: probe
+on:
+  push:
+    paths: ['.github/workflows/probe.yml']
+jobs:
+  p:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          B=https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert
+          v=$(curl -sS $B/litert/maven-metadata.xml | grep -o '<version>[^<]*' | sed 's/<version>//' | tail -8 | tr '\n' ' ')
+          echo "::notice title=versions::$v"
+          curl -sS https://dl.google.com/dl/android/maven2/com/google/ai/edge/litert/group-index.xml | grep -o 'artifact name="[^"]*"' | tr '\n' ' ' > /tmp/arts.txt
+          echo "::notice title=artifacts::$(cat /tmp/arts.txt | head -c 900)"
+          for a in litert-samsung-npu-runtime litert-npu-runtime-samsung litert-npu-runtime-libraries; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' $B/$a/maven-metadata.xml); echo "::notice title=$a::$code"
+          done
