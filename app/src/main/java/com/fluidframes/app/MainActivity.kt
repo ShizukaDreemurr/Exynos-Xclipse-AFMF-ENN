@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
         }
         val probe = Button(this).apply {
             text = "Kiểm tra NPU (ENN)"
-            setOnClickListener { status.text = com.fluidframes.enn.NpuProbe.run() ; android.util.Log.i("NpuProbe", status.text.toString()) }
+            setOnClickListener { status.text = com.fluidframes.enn.NpuProbe.run() + com.fluidframes.enn.NpuEnv.describe(this@MainActivity) ; android.util.Log.i("NpuProbe", status.text.toString()) }
         }
         val stop = Button(this).apply {
             text = "Dừng"

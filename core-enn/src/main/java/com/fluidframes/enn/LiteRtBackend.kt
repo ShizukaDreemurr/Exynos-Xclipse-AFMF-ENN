@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
+import com.google.ai.edge.litert.Environment
 import java.nio.ByteBuffer
 
 /**
@@ -19,6 +20,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
     private var inArr = FloatArray(0)
     private var outArr = FloatArray(0)
     private var usedNpu = false
+    private var env: Environment? = null
 
     override val name: String
         get() = if (usedNpu) "LiteRT/NPU" else "LiteRT/GPU"
@@ -26,6 +28,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
 
     override fun load(longSide: Int, procW: Int, procH: Int): Boolean {
         close()
+        if (preferNpu && env == null) env = NpuEnv.create(context)
         val path = "models/flow_$longSide.tflite"
         val attempts = buildList {
             if (preferNpu) add(true to CompiledModel.Options(Accelerator.NPU, Accelerator.GPU))
@@ -33,7 +36,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
         }
         for ((npu, opts) in attempts) {
             try {
-                val m = CompiledModel.create(context.assets, path, opts)
+                val m = CompiledModel.create(context.assets, path, opts, if (npu) env else null)
                 val ib = m.createInputBuffers()
                 val ob = m.createOutputBuffers()
                 model = m
