@@ -55,10 +55,15 @@ jobs:
           mkdir -p out && while read f; do cp "$f" out/; done < libs.txt
       - name: Publish prebuilt libs to branch
         run: |
+          set -e
+          mkdir -p /tmp/pub/prebuilt/arm64-v8a /tmp/pub/prebuilt/extra
+          cp out/libLiteRtDispatch_Samsung.so out/libLiteRtCompilerPlugin_Samsung.so /tmp/pub/prebuilt/arm64-v8a/
+          cp out/libLiteRt.so /tmp/pub/prebuilt/extra/
+          cd /tmp/pub && git init -q && git checkout -q -b prebuilt-npu
           git config user.name ci; git config user.email ci@example.com
-          git checkout --orphan prebuilt-npu && git rm -rf . -q
-          mkdir -p prebuilt/arm64-v8a && cp out/*.so prebuilt/arm64-v8a/
-          git add prebuilt && git commit -qm "prebuilt Samsung NPU libs" && git push -f origin prebuilt-npu
+          git add -f prebuilt && git commit -qm "prebuilt Samsung NPU libs"
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git push -f origin prebuilt-npu 2>&1 | tail -3 || { echo "::error title=publish::push failed"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: samsung-npu-dispatch
