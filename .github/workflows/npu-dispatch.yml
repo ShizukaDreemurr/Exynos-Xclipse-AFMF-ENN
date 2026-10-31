@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     paths: ['.github/workflows/npu-dispatch.yml']
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -41,12 +43,22 @@ jobs:
       - name: Build
         working-directory: LiteRT/litert
         run: |
-          cmake --build cmake_build_android_arm64 --target dispatch_api_samsung_so --parallel 3 > ../../build.log 2>&1 || { echo "::error title=build::$(tail -c 300 ../../build.log | tr "\n" " ") ## $(grep -E "error|Error" ../../build.log | tail -6 | tr '\n' ' ' | head -c 900)"; exit 1; }
+          cmake --build cmake_build_android_arm64 --target dispatch_api_samsung_so samsung_compiler_plugin --parallel 3 > ../../build.log 2>&1 || { echo "::error title=build::$(tail -c 300 ../../build.log | tr "\n" " ") ## $(grep -E "error|Error" ../../build.log | tail -6 | tr '\n' ' ' | head -c 900)"; exit 1; }
       - name: Collect
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         run: |
-          find LiteRT/litert/cmake_build_android_arm64 -name 'libLiteRt*.so' -o -name 'libtensorflow*.so' | tee libs.txt
+          find LiteRT/litert/cmake_build_android_arm64 \( -name 'libLiteRtDispatch_Samsung.so' -o -name 'libLiteRtCompilerPlugin*.so' -o -name 'libsamsung_compiler_plugin*.so' -o -name 'libLiteRt.so' \) | tee libs.txt
+          $ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf -d $(head -1 libs.txt) | grep NEEDED | tr '\n' ' ' > needed.txt || true
+          echo "::notice title=needed::$(cat needed.txt)"
           echo "::notice title=libs::$(cat libs.txt | tr '\n' ' ')"
           mkdir -p out && while read f; do cp "$f" out/; done < libs.txt
+      - name: Publish prebuilt libs to branch
+        run: |
+          git config user.name ci; git config user.email ci@example.com
+          git checkout --orphan prebuilt-npu && git rm -rf . -q
+          mkdir -p prebuilt/arm64-v8a && cp out/*.so prebuilt/arm64-v8a/
+          git add prebuilt && git commit -qm "prebuilt Samsung NPU libs" && git push -f origin prebuilt-npu
       - uses: actions/upload-artifact@v4
         with:
           name: samsung-npu-dispatch
