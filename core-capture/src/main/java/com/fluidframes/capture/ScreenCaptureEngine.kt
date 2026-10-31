@@ -47,7 +47,30 @@ class ScreenCaptureEngine(
     @Volatile var lastCaptureLatencyNs: Long = 0L
         private set
 
+    /** null = chưa nhận callback (chụp toàn màn hình hoặc Android < 14). */
+    @Volatile var contentVisible: Boolean? = null
+        private set
+    @Volatile var contentW = 0
+        private set
+    @Volatile var contentH = 0
+        private set
+
+    fun info(): String =
+        "cap=${framesCaptured.get()} vis=${contentVisible ?: "?"} content=${contentW}x$contentH " +
+            "vd=${config.width}x${config.height} fail=${acquireFailures.get()}"
+
     private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onCapturedContentVisibilityChanged(isVisible: Boolean) {
+            contentVisible = isVisible
+            Log.i(TAG, "captured content visible=$isVisible")
+        }
+
+        override fun onCapturedContentResize(width: Int, height: Int) {
+            contentW = width
+            contentH = height
+            Log.i(TAG, "captured content resize ${width}x$height")
+        }
+
         override fun onStop() {
             // Người dùng tắt từ chip hệ thống, hoặc hệ thống thu hồi.
             if (!running) return

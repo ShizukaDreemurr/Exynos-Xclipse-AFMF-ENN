@@ -47,20 +47,23 @@ void main() {
     float best = sad(origin, ivec2(0)) - 0.02;  // thiên vị nhẹ về mv = 0
     ivec2 bestMv = ivec2(0);
 
-    for (int dy = -RANGE; dy <= RANGE; dy += 2) {
-        for (int dx = -RANGE; dx <= RANGE; dx += 2) {
+    // Tìm thô bước 4 (9x9), tinh chỉnh bước 2 rồi bước 1 quanh điểm tốt nhất (~100 ứng viên thay vì ~300).
+    for (int dy = -RANGE; dy <= RANGE; dy += 4) {
+        for (int dx = -RANGE; dx <= RANGE; dx += 4) {
             if (dx == 0 && dy == 0) continue;
             float s = sad(origin, ivec2(dx, dy));
             if (s < best) { best = s; bestMv = ivec2(dx, dy); }
         }
     }
-    ivec2 c = bestMv;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            if (dx == 0 && dy == 0) continue;
-            ivec2 mv = clamp(c + ivec2(dx, dy), ivec2(-RANGE), ivec2(RANGE));
-            float s = sad(origin, mv);
-            if (s < best) { best = s; bestMv = mv; }
+    for (int step = 2; step >= 1; step -= 1) {
+        ivec2 c = bestMv;
+        for (int dy = -1; dy <= 1; ++dy) {
+            for (int dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0) continue;
+                ivec2 mv = clamp(c + ivec2(dx, dy) * step, ivec2(-RANGE), ivec2(RANGE));
+                float s = sad(origin, mv);
+                if (s < best) { best = s; bestMv = mv; }
+            }
         }
     }
 

@@ -42,6 +42,10 @@ class FramePipeline(
     @Volatile private var backendLabel = "-"
     @Volatile private var lastError = ""
     @Volatile var hostLabel = "?"
+    @Volatile var captureInfo: () -> String = { "" }
+    @Volatile private var stalls = 0
+    private var lastFrameNs = 0L
+    private var holdOffUntilNs = 0L
 
     private var backend: InferenceBackend? = null
     private var backendChoice: FlowBackend? = null
@@ -77,6 +81,7 @@ class FramePipeline(
                 s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value))
             append("work %.1f ms | drop %.1f%% | skip %d | therm %d".format(
                 s.workMs.value, s.dropRate() * 100f, s.framesSkipped.get(), thermal.status))
+            append("\n").append(captureInfo()).append(" stalls=").append(stalls)
             if (lastError.isNotEmpty()) append("\n! ").append(lastError)
         }
     }
@@ -88,7 +93,18 @@ class FramePipeline(
         var prev: FrameSlot? = null
         try {
             while (running) {
-                if (!ring.awaitNewerThan(lastSeq, 200)) continue
+                if (!ring.awaitNewerThan(lastSeq, 200)) {
+                    // Capture đứng (ví dụ app bị overlay che nên hệ thống ngừng cấp frame):
+                    // ẩn overlay để game không bị đơ hình, và đợi 3 s trước khi thử hiện lại.
+                    val idleMs = (System.nanoTime() - lastFrameNs) / 1e6
+                    if (overlayShown && lastFrameNs != 0L && idleMs > 500) {
+                        stalls++
+                        holdOffUntilNs = System.nanoTime() + 3_000_000_000L
+                        setOverlay(false)
+                    }
+                    continue
+                }
+                lastFrameNs = System.nanoTime()
                 val cur = ring.acquireLatest(1).firstOrNull() ?: continue
                 lastSeq = cur.seq
                 stats.srcFps.tick()
@@ -191,6 +207,7 @@ class FramePipeline(
             return
         }
 
+        if (System.nanoTime() < holdOffUntilNs) return
         passthroughStreak = 0
         setOverlay(true)
 
