@@ -1,5 +1,7 @@
 name: pushtest
-on: workflow_dispatch
+on:
+  push:
+    paths: [".github/workflows/pushtest.yml"]
 permissions:
   contents: write
 jobs:
