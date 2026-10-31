@@ -64,6 +64,10 @@ class MainActivity : ComponentActivity() {
             text = "Bật dịch vụ Trợ năng (overlay 100% mờ, cảm ứng xuyên qua)"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
+        val probe = Button(this).apply {
+            text = "Kiểm tra NPU (ENN)"
+            setOnClickListener { status.text = com.fluidframes.enn.NpuProbe.run() ; android.util.Log.i("NpuProbe", status.text.toString()) }
+        }
         val stop = Button(this).apply {
             text = "Dừng"
             setOnClickListener { startService(ProjectionService.stopIntent(this@MainActivity)) ; status.text = "Đã dừng" }
@@ -77,6 +81,7 @@ class MainActivity : ComponentActivity() {
                 addView(status)
                 addView(a11y)
                 addView(start)
+                addView(probe)
                 addView(stop)
             },
         )
