@@ -19,10 +19,16 @@ jobs:
           pip install tensorflow-cpu numpy > /tmp/pip1.log 2>&1 || { echo "::error title=pip1::$(tail -c 600 /tmp/pip1.log | tr '\n' ' ')"; exit 1; }
           pip install ai-edge-litert-nightly ai-edge-litert-sdk-samsung-nightly > /tmp/pip2.log 2>&1 || { echo "::error title=pip2::$(tail -c 900 /tmp/pip2.log | tr '\n' ' ')"; exit 1; }
           echo "::notice title=pip::$(pip list 2>/dev/null | grep -i -E 'litert|tensorflow' | tr '\n' ' ')"
+      - name: Flatbuffers shim (wheel plugin misses a symbol)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libflatbuffers2 > /dev/null 2>&1 || sudo apt-get install -y -qq libflatbuffers-dev > /dev/null 2>&1
+          f=$(ls /usr/lib/x86_64-linux-gnu/libflatbuffers.so* 2>/dev/null | head -1)
+          echo "::notice title=shim::$f $(nm -D $f 2>/dev/null | grep -c ClassicLocale)"
+          echo "SHIM=$f" >> $GITHUB_ENV
       - name: Build + AOT compile
         working-directory: models
         run: |
-          python make_test_model.py --sizes 640x288 --compile > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tr "\r" "\n" < /tmp/aot.log | grep -E "AOTERR|error|Error|ERROR|fail|Fail|unsupported|Unsupported|not " | grep -v "it/s" | tail -c 2500 | tr '\n' ' ')"; exit 1; }
+          LD_PRELOAD=$SHIM python make_test_model.py --sizes 640x288 --compile > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tr "\r" "\n" < /tmp/aot.log | grep -E "AOTERR|error|Error|ERROR|fail|Fail|unsupported|Unsupported|not " | grep -v "it/s" | tail -c 2500 | tr '\n' ' ')"; exit 1; }
           echo "::notice title=aotlog::$(tail -c 800 /tmp/aot.log | tr '\n' ' ')"
           find out_models -name '*.tflite' | xargs ls -l | awk '{print $5" "$9}' | tr '\n' ';' > /tmp/files.txt
           echo "::notice title=files::$(cat /tmp/files.txt)"
