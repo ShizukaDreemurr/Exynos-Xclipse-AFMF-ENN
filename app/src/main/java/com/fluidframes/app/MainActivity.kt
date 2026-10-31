@@ -68,6 +68,17 @@ class MainActivity : ComponentActivity() {
             text = "Kiểm tra NPU (ENN)"
             setOnClickListener { status.text = com.fluidframes.enn.NpuEnv.describe(this@MainActivity) + "\n\n" + com.fluidframes.enn.NpuProbe.run() ; android.util.Log.i("NpuProbe", status.text.toString()) }
         }
+        val bench = Button(this).apply {
+            text = "Đo tốc độ NPU"
+            setOnClickListener {
+                status.text = "Đang đo..."
+                Thread {
+                    val r = com.fluidframes.enn.NpuEnv.benchmark(this@MainActivity)
+                    android.util.Log.i("NpuBench", r)
+                    runOnUiThread { status.text = r }
+                }.start()
+            }
+        }
         val stop = Button(this).apply {
             text = "Dừng"
             setOnClickListener { startService(ProjectionService.stopIntent(this@MainActivity)) ; status.text = "Đã dừng" }
@@ -82,6 +93,7 @@ class MainActivity : ComponentActivity() {
                 addView(a11y)
                 addView(start)
                 addView(probe)
+                addView(bench)
                 addView(stop)
             }) },
         )

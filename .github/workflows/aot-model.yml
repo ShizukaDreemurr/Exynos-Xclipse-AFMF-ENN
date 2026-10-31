@@ -28,12 +28,12 @@ jobs:
       - name: Build + AOT compile
         working-directory: models
         run: |
-          LD_PRELOAD=$SHIM python make_test_model.py --sizes 640x288 --compile > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tr "\r" "\n" < /tmp/aot.log | grep -E "AOTERR|error|Error|ERROR|fail|Fail|unsupported|Unsupported|not " | grep -v "it/s" | tail -c 2500 | tr '\n' ' ')"; exit 1; }
+          LD_PRELOAD=$SHIM python make_test_model.py --compile > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tr "\r" "\n" < /tmp/aot.log | grep -E "AOTERR|error|Error|ERROR|fail|Fail|unsupported|Unsupported|not " | grep -v "it/s" | tail -c 2500 | tr '\n' ' ')"; exit 1; }
           echo "::notice title=aotlog::$(tail -c 800 /tmp/aot.log | tr '\n' ' ')"
           find out_models -name '*.tflite' | xargs ls -l | awk '{print $5" "$9}' | tr '\n' ';' > /tmp/files.txt
           echo "::notice title=files::$(cat /tmp/files.txt)"
       - name: Publish compiled models
-        if: success() && false
+        if: success()
         run: |
           mkdir -p /tmp/pm/models && cd models
           for n in 640 960 1280; do f=$(find out_models/c$n -name '*Samsung*' -name '*.tflite' | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done

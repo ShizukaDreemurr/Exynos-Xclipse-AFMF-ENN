@@ -31,4 +31,25 @@ object NpuEnv {
         catch (t: Throwable) { "lỗi: ${t.message}" }
         return "libs in APK: ${files.joinToString()}\nAccelerators: $accs"
     }
+
+    /** Chạy thử model đã AOT trên NPU: nạp, chạy 40 lần, trả về mô tả + ms trung bình. */
+    fun benchmark(context: Context): String {
+        val sizes = listOf(640 to (640 to 288), 960 to (960 to 416), 1280 to (1280 to 576))
+        val sb = StringBuilder("NPU benchmark:\n")
+        for ((ls, wh) in sizes) {
+            val (w, h) = wh
+            val be = LiteRtBackend(context, preferNpu = true)
+            val ok = try { be.load(ls, w, h) } catch (t: Throwable) { sb.append("$ls: lỗi ${t.message}\n"); continue }
+            if (!ok) { sb.append("$ls: không nạp được (xem logcat LiteRtBackend)\n"); continue }
+            val inp = java.nio.ByteBuffer.allocateDirect(6 * w * h * 4).order(java.nio.ByteOrder.nativeOrder())
+            val out = java.nio.ByteBuffer.allocateDirect(5 * (w / 2) * (h / 2) * 4).order(java.nio.ByteOrder.nativeOrder())
+            for (i in 0 until 6 * w * h) inp.putFloat(((i * 31) % 255) / 255f)
+            repeat(5) { be.run(inp, out) }
+            var tot = 0f; var n = 0
+            repeat(40) { val t = be.run(inp, out); if (t > 0) { tot += t; n++ } }
+            sb.append("$ls ${w}x$h: ${be.name} ${if (n > 0) "%.2f ms".format(tot / n) else "chạy lỗi"} onNpu=${be.onNpu}\n")
+            be.close()
+        }
+        return sb.toString()
+    }
 }

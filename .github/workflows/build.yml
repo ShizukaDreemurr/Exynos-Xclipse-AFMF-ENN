@@ -36,6 +36,15 @@ jobs:
             ls -la core-enn/src/main/jniLibs/arm64-v8a
           fi
 
+      - name: Fetch AOT-compiled NPU models (if any)
+        run: |
+          if git fetch -q origin prebuilt-models 2>/dev/null; then
+            mkdir -p app/src/main/assets/models
+            git archive FETCH_HEAD models | tar -x -C /tmp
+            cp /tmp/models/*.tflite app/src/main/assets/models/
+            ls -la app/src/main/assets/models
+          fi
+
       - name: Build debug APK
         run: |
           set +e
