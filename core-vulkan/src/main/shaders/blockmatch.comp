@@ -1,0 +1,82 @@
+#version 450
+// Block matching 16x16 trên lowPrev -> lowCur. Một thread = một block.
+// m = chuyển động prev->cur (pixel proc-res). Ghi flowImg: xy = F_t->0 = -0.5m, zw = F_t->1 = +0.5m (UV chuẩn hóa).
+// metrics: [1] số block chạm biên vùng tìm kiếm, [2] tổng block, [3] tổng SAD trung bình (0..255) mỗi block.
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 2, rgba8) uniform readonly image2D lowPrev;
+layout(set = 0, binding = 3, rgba8) uniform readonly image2D lowCur;
+layout(set = 0, binding = 6, rgba16f) uniform writeonly image2D flowImg;
+layout(set = 0, binding = 9) buffer Metrics { uint m[]; };
+
+layout(push_constant) uniform PC {
+    int srcW, srcH, lowW, lowH, flowW, flowH, outW, outH;
+    float t; int mode; int useNN; int pad0;
+    float flowScaleX, flowScaleY; float staticThr; float occThr;
+} pc;
+
+const int BLOCK = 16;
+const int RANGE = 16;
+const float LW_R = 0.299, LW_G = 0.587, LW_B = 0.114;
+
+float luma(ivec2 p, bool prevImg) {
+    p = clamp(p, ivec2(0), ivec2(pc.lowW - 1, pc.lowH - 1));
+    vec3 c = prevImg ? imageLoad(lowPrev, p).rgb : imageLoad(lowCur, p).rgb;
+    return LW_R * c.r + LW_G * c.g + LW_B * c.b;
+}
+
+// SAD trên lưới 8x8 mẫu (bước 2) trong block.
+float sad(ivec2 origin, ivec2 mv) {
+    float s = 0.0;
+    for (int j = 0; j < 8; ++j) {
+        for (int i = 0; i < 8; ++i) {
+            ivec2 o = origin + ivec2(i, j) * 2 + ivec2(1);
+            s += abs(luma(o, true) - luma(o + mv, false));
+        }
+    }
+    return s;
+}
+
+void main() {
+    int bw = (pc.lowW + BLOCK - 1) / BLOCK;
+    int bh = (pc.lowH + BLOCK - 1) / BLOCK;
+    ivec2 b = ivec2(gl_GlobalInvocationID.xy);
+    if (b.x >= bw || b.y >= bh) return;
+
+    ivec2 origin = b * BLOCK;
+    float best = sad(origin, ivec2(0)) - 0.02;  // thiên vị nhẹ về mv = 0
+    ivec2 bestMv = ivec2(0);
+
+    for (int dy = -RANGE; dy <= RANGE; dy += 2) {
+        for (int dx = -RANGE; dx <= RANGE; dx += 2) {
+            if (dx == 0 && dy == 0) continue;
+            float s = sad(origin, ivec2(dx, dy));
+            if (s < best) { best = s; bestMv = ivec2(dx, dy); }
+        }
+    }
+    ivec2 c = bestMv;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            if (dx == 0 && dy == 0) continue;
+            ivec2 mv = clamp(c + ivec2(dx, dy), ivec2(-RANGE), ivec2(RANGE));
+            float s = sad(origin, mv);
+            if (s < best) { best = s; bestMv = mv; }
+        }
+    }
+
+    bool boundary = abs(bestMv.x) >= RANGE - 1 || abs(bestMv.y) >= RANGE - 1;
+    atomicAdd(m[2], 1u);
+    if (boundary) atomicAdd(m[1], 1u);
+    atomicAdd(m[3], uint(clamp(best / 64.0, 0.0, 1.0) * 255.0 + 0.5));
+
+    vec2 mv = vec2(bestMv) * vec2(pc.flowScaleX, pc.flowScaleY);
+    vec4 f = vec4(-0.5 * mv, 0.5 * mv);
+    // block 16 px proc-res = 8 texel flow
+    int fb = BLOCK / 2;
+    for (int j = 0; j < fb; ++j) {
+        for (int i = 0; i < fb; ++i) {
+            ivec2 q = b * fb + ivec2(i, j);
+            if (q.x < pc.flowW && q.y < pc.flowH) imageStore(flowImg, q, f);
+        }
+    }
+}

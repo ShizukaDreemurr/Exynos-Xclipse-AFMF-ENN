@@ -1,0 +1,50 @@
+#version 450
+// mode 0: chép frame hiện tại. mode 1: nội suy t (backward warp hai phía + mask + occlusion + giữ vùng tĩnh/HUD).
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler2D uPrev;
+layout(set = 0, binding = 1) uniform sampler2D uCur;
+layout(set = 0, binding = 7) uniform sampler2D uFlow;
+layout(set = 0, binding = 8, rgba8) uniform writeonly image2D outImg;
+layout(set = 0, binding = 11) uniform sampler2D uAux;
+
+layout(push_constant) uniform PC {
+    int srcW, srcH, lowW, lowH, flowW, flowH, outW, outH;
+    float t; int mode; int useNN; int pad0;
+    float flowScaleX, flowScaleY; float staticThr; float occThr;
+} pc;
+
+float maxAbs(vec3 v) { return max(abs(v.x), max(abs(v.y), abs(v.z))); }
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    if (p.x >= pc.outW || p.y >= pc.outH) return;
+    vec2 uv = (vec2(p) + 0.5) / vec2(float(pc.outW), float(pc.outH));
+    vec3 cur = texture(uCur, uv).rgb;
+
+    if (pc.mode == 0) {
+        imageStore(outImg, p, vec4(cur, 1.0));
+        return;
+    }
+
+    vec3 prev = texture(uPrev, uv).rgb;
+    // Vùng tĩnh (HUD, nút bấm): giữ nguyên frame thật, tránh méo do flow nhiễu.
+    if (maxAbs(prev - cur) < pc.staticThr) {
+        imageStore(outImg, p, vec4(cur, 1.0));
+        return;
+    }
+
+    vec4 fl = texture(uFlow, uv);
+    vec3 a = texture(uPrev, uv + fl.xy).rgb;   // prev warp về thời điểm t
+    vec3 b = texture(uCur, uv + fl.zw).rgb;    // cur warp về thời điểm t
+    float mask = (pc.useNN != 0) ? texture(uAux, uv).r : 0.5;  // trọng số phía prev
+
+    vec3 outc;
+    if (maxAbs(a - b) > pc.occThr) {
+        // Occlusion / flow không đáng tin: trộn không warp
+        outc = mix(prev, cur, pc.t);
+    } else {
+        outc = mix(b, a, mask);
+    }
+    imageStore(outImg, p, vec4(outc, 1.0));
+}
