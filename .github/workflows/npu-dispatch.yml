@@ -41,7 +41,7 @@ jobs:
       - name: Build
         working-directory: LiteRT/litert
         run: |
-          cmake --build cmake_build_android_arm64 --target dispatch_api_samsung_so --parallel > ../../build.log 2>&1 || { echo "::error title=build::$(grep -E 'error|Error' ../../build.log | tail -8 | tr '\n' ' ' | head -c 900)"; exit 1; }
+          cmake --build cmake_build_android_arm64 --target dispatch_api_samsung_so --parallel 3 > ../../build.log 2>&1 || { echo "::error title=build::$(tail -c 300 ../../build.log | tr "\n" " ") ## $(grep -E "error|Error" ../../build.log | tail -6 | tr '\n' ' ' | head -c 900)"; exit 1; }
       - name: Collect
         run: |
           find LiteRT/litert/cmake_build_android_arm64 -name 'libLiteRt*.so' -o -name 'libtensorflow*.so' | tee libs.txt
