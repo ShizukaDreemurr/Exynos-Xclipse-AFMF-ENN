@@ -7,6 +7,8 @@ import java.io.File
 object NpuProbe {
     private val libs = listOf(
         "libenn_public_api_cpp.so",
+        "libenn_public_api_cpp_lib.so",
+        "libenn_user_lib.so",
         "libenn_public_api_ndk_v1.so",
         "libenn_user.samsung_slsi.so",
         "libenn_user.so",
@@ -23,7 +25,7 @@ object NpuProbe {
         sb.append("SoC: ${Build.SOC_MANUFACTURER} ${Build.SOC_MODEL} / ${Build.HARDWARE}\n")
         for (l in libs) {
             val loaded = try { System.loadLibrary(l.removePrefix("lib").removeSuffix(".so")); "dlopen OK" }
-            catch (t: Throwable) { "dlopen FAIL" }
+            catch (t: Throwable) { "dlopen FAIL(" + (t.message ?: "").take(90) + ")" }
             val found = dirs.filter { File(it, l).exists() }
             sb.append("$l: $loaded; file=${if (found.isEmpty()) "-" else found.joinToString()}\n")
         }

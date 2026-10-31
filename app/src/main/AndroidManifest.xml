@@ -15,6 +15,11 @@
         android:label="FluidFrames"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
+        <uses-native-library android:name="libenn_public_api_cpp.so" android:required="false" />
+        <uses-native-library android:name="libenn_public_api_cpp_lib.so" android:required="false" />
+        <uses-native-library android:name="libenn_user.samsung_slsi.so" android:required="false" />
+        <uses-native-library android:name="libenn_user_lib.so" android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
