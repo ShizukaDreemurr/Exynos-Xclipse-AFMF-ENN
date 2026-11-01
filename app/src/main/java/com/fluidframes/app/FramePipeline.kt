@@ -82,6 +82,7 @@ class FramePipeline(
             append("NN: %s | host: %s | overlay: %s\n".format(backendLabel, hostLabel, if (overlayShown) "on" else "off"))
             append("pre %.1f | flow %.1f | warp %.1f | pres %.1f ms\n".format(
                 s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value))
+            append("chờ frame %.1f | process %.1f | gpuAsync %.1f ms\n".format(idleEma.value, loopProcEma.value, asyncCallEma.value))
             append("work %.1f ms | drop %.1f%% | skip %d | therm %d".format(
                 s.workMs.value, s.dropRate() * 100f, s.framesSkipped.get(), thermal.status))
             append("\n").append(captureInfo()).append(" stalls=").append(stalls)
@@ -99,6 +100,8 @@ class FramePipeline(
         )
     }
 
+    private val idleEma = com.fluidframes.telemetry.Ema(0.15f); private val loopProcEma = com.fluidframes.telemetry.Ema(0.15f); private val asyncCallEma = com.fluidframes.telemetry.Ema(0.15f)
+
     private fun tierLabel(t: ProcTier) = t.label
 
     private fun loop() {
@@ -106,6 +109,7 @@ class FramePipeline(
         var prev: FrameSlot? = null
         try {
             while (running) {
+                val tWait = System.nanoTime()
                 if (!ring.awaitNewerThan(lastSeq, 200)) {
                     // Capture đứng (ví dụ app bị overlay che nên hệ thống ngừng cấp frame):
                     // ẩn overlay để game không bị đơ hình, và đợi 3 s trước khi thử hiện lại.
@@ -118,6 +122,7 @@ class FramePipeline(
                     continue
                 }
                 lastFrameNs = System.nanoTime()
+                idleEma.add((lastFrameNs - tWait) / 1e6f)
                 val cur = ring.acquireLatest(1).firstOrNull() ?: continue
                 lastSeq = cur.seq
                 stats.srcFps.tick()
@@ -126,12 +131,14 @@ class FramePipeline(
                 val pushed = ring.pushed.get()
                 stats.ringPushed.set(pushed)
                 stats.ringDropped.set((pushed - stats.framesIn.get()).coerceAtLeast(0))
+                val tProc = System.nanoTime()
                 try {
                     process(prev, cur)
                 } catch (t: Throwable) {
                     lastError = t.javaClass.simpleName
                     Log.e(TAG, "Lỗi xử lý frame", t)
                 }
+                loopProcEma.add((System.nanoTime() - tProc) / 1e6f)
                 // Frame chỉ được trả lại producer khi GPU đã dùng xong (đường bất đồng bộ không chờ).
                 prev?.let { pendingRelease.addLast(usedSeq to it) }
                 usedSeq = 0L
@@ -353,7 +360,9 @@ class FramePipeline(
         var useNn = d.mode == Mode.FLOW_NN && ensureBackend(st.backend, d.tier.longSide, pw, ph)
         if (!useNn) {
             // Đường GPU bất đồng bộ: 1 lần gửi GPU cho cả khung nội suy + khung thật, không chờ GPU xong.
+            val tA = System.nanoTime()
             val sq = native.gpuAsync(prev.hardwareBuffer, cur.hardwareBuffer)
+            asyncCallEma.add((System.nanoTime() - tA) / 1e6f)
             if (sq > 0) {
                 usedSeq = sq
                 val ns = native.stats()
