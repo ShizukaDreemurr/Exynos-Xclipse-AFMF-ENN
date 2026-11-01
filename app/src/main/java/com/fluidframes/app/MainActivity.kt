@@ -21,7 +21,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.fluidframes.app.telemetry.TelemetryRecorder
+import com.fluidframes.app.ui.AppEntry
 import com.fluidframes.app.ui.AppRoot
+import com.fluidframes.app.ui.TelemetryScreen
 import com.fluidframes.app.ui.FluidTheme
 import com.fluidframes.app.ui.HomeScreen
 import com.fluidframes.app.ui.NpuScreen
@@ -43,6 +46,12 @@ class MainActivity : ComponentActivity() {
     private var message by mutableStateOf("")
     private var report by mutableStateOf<NpuDiagnostics.Report?>(null)
     private var diagBusy by mutableStateOf(false)
+    private val apps: List<AppEntry> by lazy {
+        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        packageManager.queryIntentActivities(i, 0)
+            .map { AppEntry(it.loadLabel(packageManager).toString(), it.activityInfo.packageName) }
+            .filter { it.pkg != packageName }.distinctBy { it.pkg }.sortedBy { it.label.lowercase() }
+    }
 
     private val notificationLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -93,6 +102,21 @@ class MainActivity : ComponentActivity() {
                     npu = {
                         NpuScreen(report = report, busy = diagBusy, onRun = ::runDiagnostics,
                             onCopy = ::copyReport, onShare = ::shareReport)
+                    },
+                    telemetry = {
+                        val ts by TelemetryRecorder.state.collectAsState()
+                        TelemetryScreen(
+                            state = ts, apps = apps, pipelineRunning = running,
+                            onPick = { TelemetryRecorder.start(this, it.pkg, it.label) },
+                            onStop = { Thread { TelemetryRecorder.stopNow() }.start() },
+                            onShare = { f -> startActivity(Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).setType(f.mime).putExtra(Intent.EXTRA_STREAM, f.uri)
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Chia sẻ ${f.name}")) },
+                            onOpen = { f -> try { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(f.uri, f.mime)
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) } catch (_: Throwable) {
+                                Toast.makeText(this, "Không có app mở file này — dùng Chia sẻ hoặc mở trong Download", Toast.LENGTH_LONG).show() } },
+                            onReset = { TelemetryRecorder.reset() },
+                        )
                     },
                 )
             }

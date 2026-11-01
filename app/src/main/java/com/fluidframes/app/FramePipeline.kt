@@ -90,6 +90,37 @@ class FramePipeline(
         }
     }
 
+    /** Số liệu cho trình đo đạc (mỗi giây một lần). */
+    fun telemetry(): Map<String, Any?> {
+        val s = stats
+        return linkedMapOf(
+            "src_fps" to s.srcFps.fps().toDouble(),
+            "out_fps" to s.outFps.fps().toDouble(),
+            "noi_suy_fps" to s.interpFps.fps().toDouble(),
+            "work_ms" to s.workMs.value.toDouble(),
+            "pre_ms" to s.preMs.value.toDouble(),
+            "flow_ms" to s.flowMs.value.toDouble(),
+            "warp_ms" to s.warpMs.value.toDouble(),
+            "present_ms" to s.presentMs.value.toDouble(),
+            "capture_queue_ms" to s.captureMs.value.toDouble(),
+            "cho_frame_ms" to idleEma.value.toDouble(),
+            "process_ms" to loopProcEma.value.toDouble(),
+            "gpuasync_ms" to asyncCallEma.value.toDouble(),
+            "drop_pct" to (s.dropRate() * 100f).toDouble(),
+            "frames_in" to s.framesIn.get(),
+            "frames_noi_suy" to s.framesInterp.get(),
+            "frames_bo_qua" to s.framesSkipped.get(),
+            "mode" to lastMode.name,
+            "tier" to tierLabel(lastTier),
+            "backend" to backendLabel,
+            "overlay_hien" to if (overlayShown) 1 else 0,
+            "man_hz_hien_tai" to curHz().toDouble(),
+            "stalls" to stalls,
+            "loi" to lastError,
+            "capture" to captureInfo(),
+        )
+    }
+
     /** Ảnh chụp số liệu cho giao diện. */
     fun live(): LiveStats {
         val s = stats

@@ -13,6 +13,14 @@
     <!-- Tuỳ chọn: người dùng cấp bằng adb để ép tần số quét toàn hệ thống -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
+    <!-- Liệt kê app có biểu tượng khởi chạy (để chọn app cần đo) mà không cần QUERY_ALL_PACKAGES -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:label="Xclipse ENN-SS"

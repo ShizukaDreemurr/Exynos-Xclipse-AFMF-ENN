@@ -16,7 +16,11 @@ class OverlayAccessibilityService : AccessibilityService() {
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            event.packageName?.toString()?.let { com.fluidframes.app.telemetry.TelemetryRecorder.onForeground(it) }
+        }
+    }
 
     override fun onInterrupt() = Unit
 

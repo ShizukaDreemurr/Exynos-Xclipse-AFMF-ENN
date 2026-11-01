@@ -83,6 +83,7 @@ class ProjectionService : Service() {
             onOverlayVisible = { v -> main.post { overlay?.setVideoVisible(v) } },
         )
         pipeline = fp
+        pipelineRef = fp
         fp.captureInfo = { engine?.info() ?: "" }
         fp.hostLabel = if (host.trusted) "A11Y" else "APP(80%)"
         overlay = OverlayManager(
@@ -160,6 +161,7 @@ class ProjectionService : Service() {
         live.value = null
         pipeline?.stop()
         pipeline = null
+        pipelineRef = null
         overlay?.hide()
         overlay = null
         native?.setSurface(null)
@@ -198,6 +200,7 @@ class ProjectionService : Service() {
         /** Trạng thái cho giao diện (Trang chủ). */
         val running = MutableStateFlow(false)
         val live = MutableStateFlow<LiveStats?>(null)
+        @Volatile var pipelineRef: FramePipeline? = null
 
         private const val TAG = "ProjectionService"
         private const val CHANNEL_ID = "fluidframes.capture"
