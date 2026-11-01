@@ -127,6 +127,13 @@ class MenuOverlay(
         col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
             settings = settings.copy(backend = BACKENDS[it]); onChange(settings)
         })
+        col.addView(ui.toggleRow("Luôn nội suy (không passthrough)", { settings.alwaysInterp }) {
+            settings = settings.copy(alwaysInterp = it); onChange(settings)
+        })
+        col.addView(ui.caption("Ép tần số quét màn hình"))
+        col.addView(ui.segmented(listOf("Cao nhất", "60", "90", "120"), HZS.indexOf(settings.targetHz).coerceAtLeast(0)) {
+            settings = settings.copy(targetHz = HZS[it]); onChange(settings)
+        })
         col.addView(ui.toggleRow("HUD số liệu", { settings.showHud }) {
             settings = settings.copy(showHud = it); onChange(settings)
         })
@@ -184,6 +191,7 @@ class MenuOverlay(
 
     private companion object {
         const val TAG = "MenuOverlay"
+        val HZS = listOf(0, 60, 90, 120)
         val TIERS = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360)
         val BACKENDS = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
     }

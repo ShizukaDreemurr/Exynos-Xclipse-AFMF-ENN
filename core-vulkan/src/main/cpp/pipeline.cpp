@@ -28,7 +28,7 @@ double MsSince(Clock::time_point t0) {
     return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
 }
 
-constexpr int kBlock = 16;                       // phải khớp blockmatch.comp
+constexpr int kBlock = 8;                        // phải khớp blockmatch.comp
 constexpr float kSceneCutDiff = 0.28f;           // mean |luma diff| (0..1) coi là chuyển cảnh
 constexpr float kLargeMotionFrac = 0.35f;        // tỉ lệ block chạm biên vùng tìm kiếm
 constexpr size_t kMaxAhbCache = 16;

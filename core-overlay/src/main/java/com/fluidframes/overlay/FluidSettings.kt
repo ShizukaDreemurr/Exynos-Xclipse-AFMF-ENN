@@ -15,6 +15,8 @@ data class FluidSettings(
     val targetHz: Int = 0,
     /** Cạnh dài của hình xuất/chụp (px). 0 = gốc màn hình. Áp dụng khi bấm Bắt đầu lại. */
     val outLongSide: Int = 0,
+    /** Luôn nội suy: bỏ qua guard tần số quét (không tự trả game về passthrough). */
+    val alwaysInterp: Boolean = false,
 )
 
 class SettingsStore(context: Context) {
@@ -28,6 +30,7 @@ class SettingsStore(context: Context) {
         secureOverlay = prefs.getBoolean("secure", false),
         targetHz = prefs.getInt("hz", 0),
         outLongSide = prefs.getInt("outres", 0),
+        alwaysInterp = prefs.getBoolean("always", false),
     )
 
     fun save(s: FluidSettings) {
@@ -39,6 +42,7 @@ class SettingsStore(context: Context) {
             .putBoolean("secure", s.secureOverlay)
             .putInt("hz", s.targetHz)
             .putInt("outres", s.outLongSide)
+            .putBoolean("always", s.alwaysInterp)
             .apply()
     }
 

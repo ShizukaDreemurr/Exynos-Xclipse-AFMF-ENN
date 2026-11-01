@@ -15,8 +15,8 @@ layout(push_constant) uniform PC {
     float flowScaleX, flowScaleY; float staticThr; float occThr;
 } pc;
 
-const int BLOCK = 16;
-const int RANGE = 16;
+const int BLOCK = 8;    // khối ra 8x8 (mịn gấp 4 so với 16x16), cửa sổ so khớp 16x16 chồng lấn
+const int RANGE = 24;
 const float LW_R = 0.299, LW_G = 0.587, LW_B = 0.114;
 
 float luma(ivec2 p, bool prevImg) {
@@ -43,19 +43,19 @@ void main() {
     ivec2 b = ivec2(gl_GlobalInvocationID.xy);
     if (b.x >= bw || b.y >= bh) return;
 
-    ivec2 origin = b * BLOCK;
+    ivec2 origin = b * BLOCK - ivec2(4);   // cửa sổ SAD 16x16 đặt giữa khối 8x8
     float best = sad(origin, ivec2(0)) - 0.02;  // thiên vị nhẹ về mv = 0
     ivec2 bestMv = ivec2(0);
 
     // Tìm thô bước 4 (9x9), tinh chỉnh bước 2 rồi bước 1 quanh điểm tốt nhất (~100 ứng viên thay vì ~300).
-    for (int dy = -RANGE; dy <= RANGE; dy += 4) {
-        for (int dx = -RANGE; dx <= RANGE; dx += 4) {
+    for (int dy = -RANGE; dy <= RANGE; dy += 6) {
+        for (int dx = -RANGE; dx <= RANGE; dx += 6) {
             if (dx == 0 && dy == 0) continue;
             float s = sad(origin, ivec2(dx, dy));
             if (s < best) { best = s; bestMv = ivec2(dx, dy); }
         }
     }
-    for (int step = 2; step >= 1; step -= 1) {
+    for (int step = 3; step >= 1; step -= 1) {
         ivec2 c = bestMv;
         for (int dy = -1; dy <= 1; ++dy) {
             for (int dx = -1; dx <= 1; ++dx) {
@@ -74,7 +74,7 @@ void main() {
 
     vec2 mv = vec2(bestMv) * vec2(pc.flowScaleX, pc.flowScaleY);
     vec4 f = vec4(-0.5 * mv, 0.5 * mv);
-    // block 16 px proc-res = 8 texel flow
+    // block 8 px proc-res = 4 texel flow
     int fb = BLOCK / 2;
     for (int j = 0; j < fb; ++j) {
         for (int i = 0; i < fb; ++i) {

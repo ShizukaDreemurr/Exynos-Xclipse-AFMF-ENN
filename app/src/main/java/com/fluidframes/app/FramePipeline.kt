@@ -434,7 +434,7 @@ class FramePipeline(
         // nội suy chập chờn bật/tắt dù nhịp thật vẫn đủ chỗ cho khung nội suy.
         if (dtMs in 3.0..120.0) dtEma = if (dtEma == 0.0) dtMs else dtEma * 0.9 + dtMs * 0.1
         val dtRef = if (dtEma > 0.0) dtEma else dtMs
-        if (dtRef / 2.0 < 0.95 * 1000.0 / curHz().coerceAtLeast(24f)) {
+        if (!settings().alwaysInterp && dtRef / 2.0 < 0.95 * 1000.0 / curHz().coerceAtLeast(24f)) {
             val now = System.nanoTime()
             if (now > nextProbeNs) { probeUntilNs = now + 4_000_000_000L; nextProbeNs = now + 40_000_000_000L }
             if (now < probeUntilNs) presentOnly(cur) else passthrough(cur)

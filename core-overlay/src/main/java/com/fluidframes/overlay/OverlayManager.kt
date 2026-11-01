@@ -48,7 +48,8 @@ class OverlayManager(
         val old = settings
         settings = new
         hud.setVisible(new.showHud)
-        if (old.secureOverlay != new.secureOverlay) {
+        if (old.targetHz != new.targetHz) SettingsStore(host.context).save(new)
+        if (old.secureOverlay != new.secureOverlay || old.targetHz != new.targetHz) {
             // FLAG_SECURE đặt lúc tạo cửa sổ: dựng lại cửa sổ video (menu/HUD vẫn nằm trên).
             video.hide()
             video.show(new.secureOverlay)
