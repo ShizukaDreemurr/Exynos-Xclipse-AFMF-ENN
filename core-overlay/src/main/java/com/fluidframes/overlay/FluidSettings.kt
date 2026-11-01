@@ -11,6 +11,8 @@ data class FluidSettings(
     val showHud: Boolean = true,
     /** Thử nghiệm: đánh dấu cửa sổ video là FLAG_SECURE để (có thể) bị loại khỏi MediaProjection. */
     val secureOverlay: Boolean = false,
+    /** Tần số quét mục tiêu (Hz). 0 = cao nhất máy hỗ trợ. */
+    val targetHz: Int = 0,
 )
 
 class SettingsStore(context: Context) {
@@ -22,6 +24,7 @@ class SettingsStore(context: Context) {
         backend = enumOf("backend", FlowBackend.AUTO),
         showHud = prefs.getBoolean("hud", true),
         secureOverlay = prefs.getBoolean("secure", false),
+        targetHz = prefs.getInt("hz", 0),
     )
 
     fun save(s: FluidSettings) {
@@ -31,6 +34,7 @@ class SettingsStore(context: Context) {
             .putString("backend", s.backend.name)
             .putBoolean("hud", s.showHud)
             .putBoolean("secure", s.secureOverlay)
+            .putInt("hz", s.targetHz)
             .apply()
     }
 

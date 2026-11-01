@@ -137,6 +137,9 @@ class ProjectionService : Service() {
                 onProjectionStopped = { stopSelf() },
             ).also { it.start() }
             if (!startRendering()) stopSelf()
+            SettingsStore(this).load().targetHz.let { hz ->
+                if (hz > 0) RefreshForce.apply(this, hz.toFloat())
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Không khởi động được capture", e)
             stopSelf()
@@ -152,6 +155,7 @@ class ProjectionService : Service() {
 
     override fun onDestroy() {
         main.removeCallbacks(hudTick)
+        RefreshForce.restore(this)
         running.value = false
         live.value = null
         pipeline?.stop()

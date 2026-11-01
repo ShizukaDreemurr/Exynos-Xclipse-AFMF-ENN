@@ -22,6 +22,17 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
         fun onSurface(surface: Surface?, width: Int, height: Int)
     }
 
+    /** Tần số quét mục tiêu: theo cài đặt (0 = cao nhất), chọn mode gần nhất trong số mode máy hỗ trợ. */
+    private fun targetMode(): android.view.Display.Mode? = try {
+        val d = host.context.getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        val cur = d.mode
+        val modes = d.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+        val want = SettingsStore(host.context).load().targetHz
+        if (want <= 0) modes.maxByOrNull { it.refreshRate }
+        else modes.minByOrNull { kotlin.math.abs(it.refreshRate - want) }
+    } catch (_: Throwable) { null }
+
     private val main = Handler(Looper.getMainLooper())
     private var view: SurfaceView? = null
 
@@ -35,14 +46,9 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
         sv.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) = Unit
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
-                // Bỏ phiếu cho tần số quét cao nhất (trước đây cố định 60 => màn hình bị giữ ở 60 Hz).
+                // Bỏ phiếu cho tần số quét mục tiêu của người dùng.
                 runCatching {
-                    val d = host.context.getSystemService(android.hardware.display.DisplayManager::class.java)
-                        .getDisplay(android.view.Display.DEFAULT_DISPLAY)
-                    val cur = d.mode
-                    val hz = d.supportedModes
-                        .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
-                        .maxOfOrNull { it.refreshRate } ?: 60f
+                    val hz = targetMode()?.refreshRate ?: 60f
                     holder.surface.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
                         Surface.CHANGE_FRAME_RATE_ALWAYS)
                 }
@@ -68,19 +74,11 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
             gravity = Gravity.TOP or Gravity.START
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             title = "FluidFramesVideo"
-            // Xin màn hình chạy tần số quét cao nhất (vd 120 Hz) để hiển thị đủ khung nội suy.
-            try {
-                val d = sv.context.getSystemService(android.hardware.display.DisplayManager::class.java)
-                    .getDisplay(android.view.Display.DEFAULT_DISPLAY)
-                val cur = d.mode
-                val best = d.supportedModes
-                    .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
-                    .maxByOrNull { it.refreshRate }
-                if (best != null) {
-                    preferredDisplayModeId = best.modeId
-                    preferredRefreshRate = best.refreshRate
-                }
-            } catch (_: Throwable) {}
+            // Xin màn hình chạy đúng tần số quét mục tiêu.
+            targetMode()?.let { m ->
+                preferredDisplayModeId = m.modeId
+                preferredRefreshRate = m.refreshRate
+            }
             // Host thường bị Android 12+ chặn cảm ứng nếu độ mờ > 0.8.
             if (!host.trusted) alpha = 0.8f
         }
