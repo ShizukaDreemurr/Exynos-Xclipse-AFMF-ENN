@@ -140,6 +140,25 @@ class FramePipeline(
         }
     }
 
+    // --- "Không làm tệ hơn chơi trần": nếu pipeline không theo kịp nhịp game thì trả game về trực tiếp ---
+    private val procEma = com.fluidframes.telemetry.Ema(0.15f)
+    private var capFps = 30f
+    private var capSampleAtNs = 0L
+    private var capSamplePushed = 0L
+    private var overloadUntilNs = 0L     // đang "nghỉ" nội suy tới thời điểm này
+    private var overloadProbeUntilNs = 0L // đang thử lại nội suy tới thời điểm này
+    private var overloadStrikes = 0
+
+    private fun updateCapFps() {
+        val now = System.nanoTime()
+        if (capSampleAtNs == 0L) { capSampleAtNs = now; capSamplePushed = ring.pushed.get(); return }
+        if (now - capSampleAtNs >= 1_000_000_000L) {
+            val pushed = ring.pushed.get()
+            capFps = ((pushed - capSamplePushed) * 1e9f / (now - capSampleAtNs)).coerceIn(10f, 120f)
+            capSampleAtNs = now; capSamplePushed = pushed
+        }
+    }
+
     private var nextProbeNs = 0L
     private var probeUntilNs = 0L
     private var hzCached = 60f
@@ -282,6 +301,26 @@ class FramePipeline(
         }
 
         if (System.nanoTime() < holdOffUntilNs) return
+        updateCapFps()
+        run {
+            val now = System.nanoTime()
+            if (now < overloadUntilNs) { passthrough(cur); return }
+            // Đủ thời gian nghỉ: thử lại nội suy 3 s để đo chi phí thật.
+            if (overloadUntilNs != 0L && overloadProbeUntilNs == 0L) {
+                overloadProbeUntilNs = now + 3_000_000_000L
+                procEma.reset()
+            }
+            if (overloadProbeUntilNs != 0L && now >= overloadProbeUntilNs) {
+                // Hết thời gian thử: nếu vẫn quá tải thì nghỉ tiếp (lâu dần), nếu ổn thì tiếp tục bình thường.
+                overloadProbeUntilNs = 0L
+                val interval = 1000f / capFps
+                if (procEma.value > 0.8f * interval) {
+                    overloadStrikes++
+                    overloadUntilNs = now + minOf(60L, 8L * overloadStrikes) * 1_000_000_000L
+                    passthrough(cur); return
+                } else { overloadUntilNs = 0L; overloadStrikes = 0 }
+            }
+        }
         // Đang tụt lại (đã có frame mới hơn chờ sẵn) hoặc frame trước không liền kề (bị bỏ):
         // nội suy lúc này vừa trễ vừa sai chuyển động, và làm pipeline chậm thêm. Chỉ present frame thật.
         if (ring.pushed.get() > cur.seq || prev.seq != cur.seq - 1) { presentOnly(cur); return }
@@ -318,6 +357,12 @@ class FramePipeline(
         val queueMs = (t0 - cur.arrivedNs) / 1e6f
         val workMs = (System.nanoTime() - t0) / 1e6f + lastWarpMs + queueMs.coerceAtLeast(0f)
         stats.workMs.add(workMs)
+        procEma.add((System.nanoTime() - t0) / 1e6f)
+        if (overloadUntilNs == 0L && overloadProbeUntilNs == 0L && procEma.count >= 30 &&
+            procEma.value > 0.8f * (1000f / capFps)) {
+            overloadStrikes = 1
+            overloadUntilNs = System.nanoTime() + 8_000_000_000L
+        }
 
         val gapMs = (dtMs.toFloat() / 2f - 1f).coerceIn(0f, 25f)
         val ok = native.finish(interp, nnFlowReady = interp && useNn, gapMs = gapMs)

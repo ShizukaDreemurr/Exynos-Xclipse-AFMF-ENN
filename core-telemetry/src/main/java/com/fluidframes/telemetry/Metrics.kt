@@ -8,8 +8,13 @@ class Ema(private val alpha: Float = 0.1f) {
     @Volatile var value: Float = 0f
         private set
     private var primed = false
+    @Volatile var count: Int = 0
+        private set
+
+    fun reset() { primed = false; count = 0; value = 0f }
 
     fun add(x: Float) {
+        count++
         if (!primed) {
             primed = true
             value = x
