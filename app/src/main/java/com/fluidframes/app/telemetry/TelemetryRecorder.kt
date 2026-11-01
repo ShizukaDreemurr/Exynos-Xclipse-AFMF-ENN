@@ -73,10 +73,11 @@ object TelemetryRecorder {
 
     val isRecording get() = state.value is State.Recording
 
-    fun start(context: Context, pkg: String, appLabel: String) {
+    fun start(context: Context, pkg: String, appLabel: String, launch: Boolean = true) {
         synchronized(lock) {
             if (isRecording) return
             app = context.applicationContext
+            ownPkg = app.packageName
             target = pkg; label = appLabel
             rows.clear(); events.clear(); unreadable.clear()
             t0 = SystemClock.elapsedRealtime(); wall0 = System.currentTimeMillis()
@@ -89,14 +90,32 @@ object TelemetryRecorder {
             thread = th; handler = Handler(th.looper)
             handler!!.post(tick)
         }
-        app.packageManager.getLaunchIntentForPackage(pkg)?.let {
+        if (launch) app.packageManager.getLaunchIntentForPackage(pkg)?.let {
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             try { app.startActivity(it) } catch (_: Throwable) {}
         }
     }
 
     /** Gọi từ dịch vụ Trợ năng mỗi khi cửa sổ đổi: biết app nào đang ở trước. */
+    fun attach(context: Context) { if (ownPkg.isEmpty()) ownPkg = context.packageName }
+
+    @Volatile private var lastFg = ""
+    @Volatile private var ownPkg = ""
+
+    /** Bấm 'Đo log' từ menu overlay: đo luôn app đang ở trước (không mở lại app). */
+    fun startHere(context: Context): Boolean {
+        val pkg = lastFg
+        if (pkg.isEmpty() || isRecording) return false
+        val pm = context.applicationContext.packageManager
+        val name = try { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() } catch (_: Throwable) { pkg }
+        start(context, pkg, name, launch = false)
+        synchronized(lock) { fgPkg = pkg; targetSeen = true }
+        return true
+    }
+
     fun onForeground(pkg: String) {
+        if (ownPkg.isNotEmpty() && pkg != ownPkg && pkg != "com.android.systemui" &&
+            !pkg.contains("inputmethod") && !pkg.contains("keyboard")) lastFg = pkg
         if (!isRecording) return
         if (pkg == app.packageName || pkg == "com.android.systemui" ||
             pkg.contains("inputmethod") || pkg.contains("keyboard")) return

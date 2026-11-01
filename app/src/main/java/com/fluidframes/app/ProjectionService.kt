@@ -96,6 +96,15 @@ class ProjectionService : Service() {
             initial = store.load(),
             onSettings = { store.save(it) },
             onStopRequested = { stopSelf() },
+            onRecordToggle = {
+                if (com.fluidframes.app.telemetry.TelemetryRecorder.isRecording) {
+                    com.fluidframes.app.telemetry.TelemetryRecorder.stopNow("Bấm dừng ở menu overlay")
+                    "Đã dừng đo. Mở app → tab Đo đạc để xem/chia sẻ file CSV, XLSX."
+                } else if (com.fluidframes.app.telemetry.TelemetryRecorder.startHere(this)) {
+                    "Đang đo app đang chạy. Bấm lại để dừng."
+                } else "Chưa biết app nào đang chạy: bật Trợ năng rồi chuyển vào game một lần."
+            },
+            isRecording = { com.fluidframes.app.telemetry.TelemetryRecorder.isRecording },
         ).also { it.show() }
         fp.start()
         running.value = true

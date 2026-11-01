@@ -10,6 +10,8 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Toast
 import android.widget.TextView
 import com.fluidframes.telemetry.FlowBackend
 import com.fluidframes.telemetry.ProcTier
@@ -23,6 +25,8 @@ class MenuOverlay(
     initial: FluidSettings,
     private val onChange: (FluidSettings) -> Unit,
     private val onStop: () -> Unit,
+    private val onRecordToggle: () -> String,
+    private val isRecording: () -> Boolean,
 ) {
     private var settings = initial
     private val dp = host.context.resources.displayMetrics.density
@@ -130,22 +134,46 @@ class MenuOverlay(
             settings = settings.copy(secureOverlay = it); onChange(settings)
         })
         col.addView(View(ctx), LinearLayout.LayoutParams(1, ui.px(8)))
+        lateinit var recBtn: TextView
+        fun recLabel() = if (isRecording()) "■  Dừng đo log" else "●  Đo log app đang chạy"
+        recBtn = ui.button(recLabel(), danger = false) {
+            val msg = onRecordToggle()
+            if (msg.isNotEmpty()) Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            recBtn.text = recLabel()
+        } as TextView
+        col.addView(recBtn)
+        col.addView(View(ctx), LinearLayout.LayoutParams(1, ui.px(8)))
         col.addView(ui.button("Dừng Xclipse ENN-SS", danger = true) { closePanel(); onStop() })
 
+        // Cuộn được: giới hạn chiều cao 85% màn hình, nội dung dài hơn thì vuốt.
+        val dm = ctx.resources.displayMetrics
+        val maxH = (dm.heightPixels * 0.85f).toInt()
+        val w = (300 * dp).toInt()
+        col.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.UNSPECIFIED)
+        val h = minOf(col.measuredHeight, maxH)
+        val scroll = ScrollView(ctx).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            background = OS.rounded(OS.BG, 28 * dp, OS.OUTLINE, ui.px(1))
+            clipToOutline = true
+            addView(col)
+        }
+        col.background = null
         val b = bubbleLp
         val lp = WindowManager.LayoutParams(
-            (300 * dp).toInt(), WindowManager.LayoutParams.WRAP_CONTENT, host.windowType,
+            w, h, host.windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = (b?.x ?: 0) + (60 * dp).toInt()
-            y = b?.y ?: 0
+            y = (b?.y ?: 0).coerceIn(0, (dm.heightPixels - h).coerceAtLeast(0))
+            x = x.coerceIn(0, (dm.widthPixels - w).coerceAtLeast(0))
             title = "FluidFramesPanel"
         }
         try {
-            host.windowManager.addView(col, lp)
-            panel = col
+            host.windowManager.addView(scroll, lp)
+            panel = scroll
         } catch (e: Exception) {
             Log.e(TAG, "addView panel thất bại", e)
         }

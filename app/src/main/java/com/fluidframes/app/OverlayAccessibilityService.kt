@@ -18,7 +18,7 @@ class OverlayAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            event.packageName?.toString()?.let { com.fluidframes.app.telemetry.TelemetryRecorder.onForeground(it) }
+            event.packageName?.toString()?.let { com.fluidframes.app.telemetry.TelemetryRecorder.attach(applicationContext); TelemetryRecorder.onForeground(it) }
         }
     }
 
