@@ -153,6 +153,11 @@ class ScreenCaptureEngine(
                 null
             } ?: return
 
+            // Chờ producer (SurfaceFlinger) vẽ xong frame này, nếu không GPU của ta đọc buffer đang
+            // được ghi dở => xé hình.
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                try { img.fence.use { f -> if (f.isValid) f.awaitForever() } } catch (_: Throwable) {}
+            }
             val now = System.nanoTime()
             val hb = try { img.hardwareBuffer } catch (e: Exception) { null }
             if (hb == null) {

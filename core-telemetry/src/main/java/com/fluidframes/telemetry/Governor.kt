@@ -41,8 +41,7 @@ class Governor {
 
         if (!i.enabled || i.prefBackend == FlowBackend.OFF) return pass()
         if (i.thermalStatus >= 4) return pass() // CRITICAL trở lên
-        // Nguồn đã ≥ 50 fps: nội suy x2 vượt 60 Hz, không có lợi.
-        if (i.srcFps > 50f) return pass()
+        // Luôn nội suy, không phụ thuộc fps nguồn (theo yêu cầu người dùng).
         if (passthroughHold > 0) { passthroughHold--; return pass() }
 
         if (cooldown > 0) cooldown--
@@ -56,7 +55,7 @@ class Governor {
             when {
                 tierIdx < tiers.lastIndex -> tierIdx++
                 !gpuOnly && i.npuAvailable -> gpuOnly = true
-                else -> passthroughHold = 150 // ~5 s ở 30 fps
+                else -> {} // đã ở mức thấp nhất (GPU 360p): vẫn nội suy, không rơi về passthrough
             }
             cooldown = 60
         } else if (under >= 300 && cooldown == 0) {

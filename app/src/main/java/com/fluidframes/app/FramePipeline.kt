@@ -193,7 +193,7 @@ class FramePipeline(
         }
         // Khoảng cách timestamp bất thường (pause, nguồn 60 fps, lag) -> không nội suy.
         val dtMs = (cur.timestampNs - prev.timestampNs) / 1e6
-        val gapOk = dtMs in 14.0..70.0
+        val gapOk = dtMs in 3.0..120.0
 
         // npuAvailable chỉ true khi đã nạp được (hoặc chưa thử và có backend).
         val npuCandidate = st.backend != FlowBackend.GPU && st.backend != FlowBackend.OFF && !backendFailed
