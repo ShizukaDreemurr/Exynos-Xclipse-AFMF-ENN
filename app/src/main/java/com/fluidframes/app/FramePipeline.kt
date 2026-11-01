@@ -144,8 +144,13 @@ class FramePipeline(
         if (now - vsyncAtNs > 1_000_000_000L) {
             vsyncAtNs = now
             try {
-                val hz = context.getSystemService(android.hardware.display.DisplayManager::class.java)
-                    .getDisplay(android.view.Display.DEFAULT_DISPLAY).refreshRate
+                // Tần số quét CAO NHẤT máy hỗ trợ ở độ phân giải hiện tại (overlay sẽ xin mode này).
+                val d = context.getSystemService(android.hardware.display.DisplayManager::class.java)
+                    .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                val cur = d.mode
+                val hz = d.supportedModes
+                    .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+                    .maxOfOrNull { it.refreshRate } ?: d.refreshRate
                 if (hz in 24f..240f) vsyncCached = 1000f / hz
             } catch (_: Throwable) {}
         }

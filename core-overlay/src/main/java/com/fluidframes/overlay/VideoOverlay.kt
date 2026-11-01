@@ -58,6 +58,19 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
             gravity = Gravity.TOP or Gravity.START
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             title = "FluidFramesVideo"
+            // Xin màn hình chạy tần số quét cao nhất (vd 120 Hz) để hiển thị đủ khung nội suy.
+            try {
+                val d = sv.context.getSystemService(android.hardware.display.DisplayManager::class.java)
+                    .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                val cur = d.mode
+                val best = d.supportedModes
+                    .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+                    .maxByOrNull { it.refreshRate }
+                if (best != null) {
+                    preferredDisplayModeId = best.modeId
+                    preferredRefreshRate = best.refreshRate
+                }
+            } catch (_: Throwable) {}
             // Host thường bị Android 12+ chặn cảm ứng nếu độ mờ > 0.8.
             if (!host.trusted) alpha = 0.8f
         }
