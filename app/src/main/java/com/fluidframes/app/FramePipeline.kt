@@ -1,5 +1,6 @@
 package com.fluidframes.app
 
+import com.fluidframes.overlay.HudOverlay
 import android.content.Context
 import com.fluidframes.app.BuildConfig
 import android.util.Log
@@ -81,19 +82,35 @@ class FramePipeline(
     fun hudText(mask: Int = -1): String {
         val s = stats
         val out = s.outFps.fps()
+        val src = s.srcFps.fps()
         fun on(bit: Int) = mask and bit != 0
+        val G = HudOverlay.G; val Y = HudOverlay.Y; val R = HudOverlay.R
+        fun r(a: String, b: String, c: String) = HudOverlay.row(a, b, c)
         val lines = ArrayList<String>()
-        if (on(1)) lines += "Xclipse ENN-SS %s".format(BuildConfig.BUILD_TAG)
-        if (on(2)) lines += "src %.0f → out %.0f fps  [%s %s]".format(s.srcFps.fps(), out, lastMode, tierLabel(lastTier))
-        if (on(4)) lines += "màn: %.0f Hz (tối đa %.0f)".format(curHz(), 1000f / vsyncMs())
-        if (on(8)) lines += "NN: %s | host: %s | overlay: %s".format(backendLabel, hostLabel, if (overlayShown) "on" else "off")
-        if (on(16)) lines += "pre %.1f | flow %.1f | warp %.1f | pres %.1f ms".format(
-            s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value)
-        if (on(32)) lines += "chờ frame %.1f | process %.1f | gpuAsync %.1f ms".format(idleEma.value, loopProcEma.value, asyncCallEma.value)
-        if (on(64)) lines += "work %.1f ms | drop %.1f%% | skip %d | therm %d".format(
-            s.workMs.value, s.dropRate() * 100f, s.framesSkipped.get(), thermal.status)
-        if (on(128)) lines += captureInfo() + " stalls=" + stalls
-        if (on(512) && lastError.isNotEmpty()) lines += "! $lastError"
+        if (on(1)) {
+            lines += "Xclipse ENN-SS"
+            lines += r("Bản", BuildConfig.BUILD_TAG, "")
+            lines += r("Chế độ", lastMode.name + " " + tierLabel(lastTier), if (lastMode.name.contains("PASS", true)) Y else G)
+        }
+        if (on(2)) {
+            lines += r("FPS gốc", "%.0f".format(src), "")
+            lines += r("FPS xuất", "%.0f".format(out), if (out >= curHz() * 0.9f) G else if (out >= curHz() * 0.6f) Y else R)
+        }
+        if (on(4)) lines += r("Tần số quét", "%.0fHz".format(curHz()), "")
+        if (on(8)) lines += r("Backend", backendLabel + if (overlayShown) "" else " (overlay tắt)", if (backendLabel.contains("NPU", true)) G else "")
+        if (on(16)) lines += r("pre/flow/warp ms", "%.1f/%.1f/%.1f".format(s.preMs.value, s.flowMs.value, s.warpMs.value), "")
+        if (on(32)) lines += r("Chờ/xử lý ms", "%.1f/%.1f".format(idleEma.value, loopProcEma.value), "")
+        if (on(64)) {
+            val w = s.workMs.value
+            val budget = 1000f / curHz().coerceAtLeast(30f)
+            lines += r("Frame time", "%.1fms".format(w), if (w < budget * 0.7f) G else if (w < budget) Y else R)
+            val d = s.dropRate() * 100f
+            lines += r("Rớt frame", "%.1f%%".format(d), if (d < 2f) G else if (d < 10f) Y else R)
+            lines += r("Nhiệt", when { thermal.status <= 1 -> "Nominal"; thermal.status == 2 -> "Fair"; thermal.status == 3 -> "Serious"; else -> "Critical" },
+                when { thermal.status <= 1 -> G; thermal.status == 2 -> Y; else -> R })
+        }
+        if (on(128)) lines += r("Capture", captureInfo() + " stalls=" + stalls, "")
+        if (on(512) && lastError.isNotEmpty()) lines += r("Lỗi", lastError, R)
         return lines.joinToString("\n")
     }
 

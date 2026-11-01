@@ -1,5 +1,6 @@
 package com.fluidframes.app
 
+import com.fluidframes.overlay.HudOverlay
 import java.io.File
 
 /** Đo CPU/GPU % và MHz không cần quyền đặc biệt (cách của fpsstat). Đọc không được thì trả null → HUD hiện "n/a". */
@@ -81,10 +82,11 @@ class SysLoad {
         return null
     }
 
-    fun line(): String {
+    fun rows(): List<String> {
         val c = cpuPct(); val cm = cpuMhz(); val g = gpuPct(); val gm = gpuMhz()
-        fun s(p: Number?, m: Int?) = (if (p != null) "%.0f%%".format(p.toDouble()) else "n/a") + (if (m != null) " $m MHz" else "")
-        return "CPU " + s(c, cm) + " | GPU " + s(g, gm)
+        fun col(p: Double?) = if (p == null) "" else if (p < 60) HudOverlay.G else if (p < 85) HudOverlay.Y else HudOverlay.R
+        fun v(p: Double?, m: Int?) = (if (p != null) "%.0f%%".format(p) else "n/a") + (if (m != null) " ${m}MHz" else "")
+        return listOf(HudOverlay.row("CPU", v(c, cm), col(c)), HudOverlay.row("GPU", v(g?.toDouble(), gm), col(g?.toDouble())))
     }
 
     fun columns(): Map<String, Any?> = mapOf("cpu_pct" to cpuPct(), "cpu_mhz" to cpuMhz(), "gpu_pct" to gpuPct(), "gpu_mhz" to gpuMhz())

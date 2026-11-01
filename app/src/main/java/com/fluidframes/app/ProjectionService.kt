@@ -58,7 +58,7 @@ class ProjectionService : Service() {
                     val pw = powerLine()
                     if (pw.isNotEmpty()) txt = if (txt.isEmpty()) pw else txt + "\n" + pw
                 }
-                if (mask and com.fluidframes.overlay.HudLines.LOAD != 0) txt = if (txt.isEmpty()) sysLoad.line() else txt + "\n" + sysLoad.line()
+                if (mask and com.fluidframes.overlay.HudLines.LOAD != 0) sysLoad.rows().joinToString("\n").let { txt = if (txt.isEmpty()) it else txt + "\n" + it }
                 overlay?.setHudText(txt); live.value = it.live()
             }
             main.postDelayed(this, 500)
@@ -77,7 +77,7 @@ class ProjectionService : Service() {
         // Đơn vị dòng điện khác nhau theo máy (µA hay mA): giá trị > 20000 coi là µA.
         val ma = if (kotlin.math.abs(ua) > 20000) ua / 1000f else ua.toFloat()
         val w = kotlin.math.abs(ma) * mv / 1_000_000f
-        "pin %d%% | %.1f°C | %.0f mA | %.2f W".format(lvl, tmp, ma, w)
+        com.fluidframes.overlay.HudOverlay.row("Pin", "%d%% %.1f°C".format(lvl, tmp)) + "\n" + com.fluidframes.overlay.HudOverlay.row("Công suất", "%.2f W".format(w), if (w < 4f) com.fluidframes.overlay.HudOverlay.G else if (w < 7f) com.fluidframes.overlay.HudOverlay.Y else com.fluidframes.overlay.HudOverlay.R)
     } catch (_: Throwable) { "" }
 
     private fun startRendering(): Boolean {
