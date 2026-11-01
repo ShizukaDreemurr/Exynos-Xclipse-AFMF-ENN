@@ -91,7 +91,7 @@ object NpuDiagnostics {
                     val avg = tot / n
                     if (ls == 640) ms640 = avg
                     rows += Row("Đo $ls (${w}x$h)", Level.OK, "%.2f ms/khung · ${be.name} · cách ${be.usedStrategy?.id}".format(avg))
-                } else rows += Row("Đo $ls (${w}x$h)", Level.FAIL, "chạy lỗi")
+                } else rows += Row("Đo $ls (${w}x$h)", Level.FAIL, be.lastRunError.ifBlank { "chạy lỗi" })
                 be.close()
             }
         }

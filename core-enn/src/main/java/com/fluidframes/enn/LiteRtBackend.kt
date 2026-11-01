@@ -24,6 +24,8 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
 
     var lastError: String = ""
         private set
+    var lastRunError: String = ""
+        private set
     var usedStrategy: NpuEnv.Strategy? = null
         private set
 
@@ -63,18 +65,25 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
 
     override fun run(input: ByteBuffer, output: ByteBuffer): Float {
         val m = model ?: return -1f
+        var stage = "chuẩn bị"
         return try {
             val t0 = System.nanoTime()
+            stage = "đọc input"
             input.position(0)
             input.asFloatBuffer().get(inArr)
+            stage = "ghi vào buffer NPU"
             inBufs[0].writeFloat(inArr)
+            stage = "chạy model"
             m.run(inBufs, outBufs)
+            stage = "đọc output"
             outArr = outBufs[0].readFloat()
+            stage = "chép output"
             output.position(0)
             output.asFloatBuffer().put(outArr)
             (System.nanoTime() - t0) / 1e6f
         } catch (t: Throwable) {
-            Log.e(TAG, "Suy luận lỗi", t)
+            lastRunError = "[$stage] ${t.javaClass.simpleName}: ${(t.message ?: "").take(220)} (in=${inArr.size}f, out=${outArr.size}f)"
+            Log.e(TAG, "Suy luận lỗi: $lastRunError", t)
             -1f
         }
     }
