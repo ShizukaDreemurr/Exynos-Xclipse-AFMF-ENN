@@ -140,10 +140,21 @@ class FramePipeline(
         }
     }
 
-    private fun curHz(): Float = try {
-        context.getSystemService(android.hardware.display.DisplayManager::class.java)
-            .getDisplay(android.view.Display.DEFAULT_DISPLAY).refreshRate
-    } catch (_: Throwable) { 0f }
+    private var nextProbeNs = 0L
+    private var probeUntilNs = 0L
+    private var hzCached = 60f
+    private var hzAtNs = 0L
+    private fun curHz(): Float {
+        val now = System.nanoTime()
+        if (now - hzAtNs > 300_000_000L) {
+            hzAtNs = now
+            try {
+                hzCached = context.getSystemService(android.hardware.display.DisplayManager::class.java)
+                    .getDisplay(android.view.Display.DEFAULT_DISPLAY).refreshRate
+            } catch (_: Throwable) {}
+        }
+        return hzCached
+    }
 
     private var vsyncCached = 16.6f
     private var vsyncAtNs = 0L
@@ -255,7 +266,15 @@ class FramePipeline(
         // Màn hình chỉ hiển thị tối đa `refresh` khung/s. Nếu nửa chu kỳ nguồn ngắn hơn 1 vsync thì
         // khung nội suy không còn chỗ để hiện: ta sẽ present 2 lần/khung, chặn theo vsync, làm cả
         // pipeline (và fps ta đo được) tụt về ~1/2. Khi đó để game hiển thị trực tiếp.
-        if (dtMs / 2.0 < 0.95 * vsyncMs()) { passthrough(cur); return }
+        // Dùng tần số quét HIỆN TẠI (không phải tối đa): nếu màn hình chưa lên 120 Hz mà vẫn nội suy thì
+        // mỗi khung phải present 2 lần ở 60 Hz => src bị kẹt ở 30 fps (tệ hơn chơi trần).
+        // Giữ overlay hiện (presentOnly) vài giây để phiếu 120 Hz của overlay có hiệu lực, hết hạn thì trả game về trực tiếp.
+        if (dtMs / 2.0 < 0.95 * 1000.0 / curHz().coerceAtLeast(24f)) {
+            val now = System.nanoTime()
+            if (now > nextProbeNs) { probeUntilNs = now + 4_000_000_000L; nextProbeNs = now + 40_000_000_000L }
+            if (now < probeUntilNs) presentOnly(cur) else passthrough(cur)
+            return
+        }
         if (!gapOk) {
             stats.framesSkipped.incrementAndGet()
             passthrough(cur)

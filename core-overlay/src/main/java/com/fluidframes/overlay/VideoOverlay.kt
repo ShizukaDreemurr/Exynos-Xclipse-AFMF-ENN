@@ -35,7 +35,17 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
         sv.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) = Unit
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
-                runCatching { holder.surface.setFrameRate(60f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT) }
+                // Bỏ phiếu cho tần số quét cao nhất (trước đây cố định 60 => màn hình bị giữ ở 60 Hz).
+                runCatching {
+                    val d = host.context.getSystemService(android.hardware.display.DisplayManager::class.java)
+                        .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                    val cur = d.mode
+                    val hz = d.supportedModes
+                        .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+                        .maxOfOrNull { it.refreshRate } ?: 60f
+                    holder.surface.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+                        Surface.CHANGE_FRAME_RATE_ALWAYS)
+                }
                 listener.onSurface(holder.surface, w, h)
             }
             override fun surfaceDestroyed(holder: SurfaceHolder) = listener.onSurface(null, 0, 0)
