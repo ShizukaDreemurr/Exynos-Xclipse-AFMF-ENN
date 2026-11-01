@@ -431,6 +431,6 @@ class FramePipeline(
     private companion object {
         const val TAG = "FramePipeline"
         const val HIDE_AFTER_FRAMES = 20
-        const val NN_FLOW_TRAINED = false
+        const val NN_FLOW_TRAINED = true
     }
 }
