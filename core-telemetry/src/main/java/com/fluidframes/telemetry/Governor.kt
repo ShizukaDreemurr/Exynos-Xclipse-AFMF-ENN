@@ -50,7 +50,7 @@ class Governor {
         val underBudget = i.workMs < 0.6f * budgetMs
         if (overBudget) { over++; under = 0 } else if (underBudget) { under++; over = 0 } else { over = 0; under = 0 }
 
-        if (over >= 20 && cooldown == 0) {
+        if (over >= 45 && cooldown == 0) {
             over = 0
             when {
                 tierIdx < tiers.lastIndex -> tierIdx++
@@ -58,7 +58,7 @@ class Governor {
                 else -> {} // đã ở mức thấp nhất (GPU 360p): vẫn nội suy, không rơi về passthrough
             }
             cooldown = 60
-        } else if (under >= 300 && cooldown == 0) {
+        } else if (under >= 120 && cooldown == 0) {
             under = 0
             when {
                 gpuOnly && i.npuAvailable -> gpuOnly = false

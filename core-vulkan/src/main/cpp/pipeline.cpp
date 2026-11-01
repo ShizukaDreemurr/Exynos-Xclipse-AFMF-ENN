@@ -989,7 +989,7 @@ int64_t Pipeline::GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur) {
     }
     VkResult r2 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, F.acqB, VK_NULL_HANDLE, &idxB);
     if (r2 != VK_SUCCESS && r2 != VK_SUBOPTIMAL_KHR) { scDirty_ = true; return -1; }
-    if (r1 == VK_SUBOPTIMAL_KHR || r2 == VK_SUBOPTIMAL_KHR) scDirty_ = true;
+    // SUBOPTIMAL không phải lỗi: Android hay báo thế liên tục (khác pre-transform); dựng lại swapchain mỗi khung làm pipeline chậm ~4x.
     const double acqMs = MsSince(tAcq);
 
     memset(F.metrics.ptr, 0, 64);
@@ -1082,8 +1082,8 @@ int64_t Pipeline::GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur) {
         pi.pSwapchains = &sc_;
         pi.pImageIndices = &id;
         const VkResult pr = vkQueuePresentKHR(queue_, &pi);
-        if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) scDirty_ = true;
-        else if (pr != VK_SUCCESS) Fail("vkQueuePresentKHR", pr);
+        if (pr == VK_ERROR_OUT_OF_DATE_KHR) scDirty_ = true;
+        else if (pr != VK_SUCCESS && pr != VK_SUBOPTIMAL_KHR) Fail("vkQueuePresentKHR", pr);
     }
     stats_[7] = static_cast<float>(acqMs);
     return static_cast<int64_t>(F.seq);
@@ -1139,7 +1139,6 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
         } else {
             const VkResult r2 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, acquireSem2_, VK_NULL_HANDLE, &idxB);
             if (r2 != VK_SUCCESS && r2 != VK_SUBOPTIMAL_KHR) { scDirty_ = true; return kBeginError; }
-            if (r1 == VK_SUBOPTIMAL_KHR || r2 == VK_SUBOPTIMAL_KHR) scDirty_ = true;
         }
     }
 
@@ -1275,8 +1274,8 @@ bool Pipeline::Finish(bool interp, bool nnFlowReady, float gapMs) {
             pi.pSwapchains = &sc_;
             pi.pImageIndices = &id;
             const VkResult pr = vkQueuePresentKHR(queue_, &pi);
-            if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) scDirty_ = true;
-            else if (pr != VK_SUCCESS) { Fail("vkQueuePresentKHR", pr); okf = false; }
+            if (pr == VK_ERROR_OUT_OF_DATE_KHR) scDirty_ = true;
+            else if (pr != VK_SUCCESS && pr != VK_SUBOPTIMAL_KHR) { Fail("vkQueuePresentKHR", pr); okf = false; }
         }
         stats_[7] = 0.f;
         curPrev_ = curCur_ = nullptr;
@@ -1338,7 +1337,6 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     if (ar == VK_ERROR_OUT_OF_DATE_KHR) { scDirty_ = true; return true; }
     if (ar == VK_TIMEOUT || ar == VK_NOT_READY) return true;  // bỏ lượt, không phải lỗi
     if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) return Fail("vkAcquireNextImageKHR", ar);
-    if (ar == VK_SUBOPTIMAL_KHR) scDirty_ = true;
 
     // 1) Compute
     VK_TRY(vkResetCommandBuffer(cmdWarp_, 0));
@@ -1419,9 +1417,9 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     pi.pSwapchains = &sc_;
     pi.pImageIndices = &idx;
     const VkResult pr = vkQueuePresentKHR(queue_, &pi);
-    if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) {
+    if (pr == VK_ERROR_OUT_OF_DATE_KHR) {
         scDirty_ = true;
-    } else if (pr != VK_SUCCESS) {
+    } else if (pr != VK_SUCCESS && pr != VK_SUBOPTIMAL_KHR) {
         Fail("vkQueuePresentKHR", pr);
     }
     VK_TRY(vkWaitForFences(dev_, 1, &fenceA_, VK_TRUE, UINT64_MAX));
