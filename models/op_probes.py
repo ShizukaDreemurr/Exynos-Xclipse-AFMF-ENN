@@ -82,8 +82,32 @@ def m_resize_only():
     return tf.keras.Model(inp, L.Permute((3, 1, 2))(y))
 
 
+def make_gwarp(H, W):
+    """warp bilinear bằng gather ở kích thước thật [1,6,H,W] -> [1,3,H,W] (để đo tốc độ NPU)."""
+    inp = tf.keras.Input(shape=(6, H, W), batch_size=1, name="input")
+    x = L.Permute((2, 3, 1))(inp)
+    img, flow = x[..., 0:3], x[..., 3:5] * 6.0
+    gy, gx = np.meshgrid(np.arange(H, dtype=np.float32), np.arange(W, dtype=np.float32), indexing="ij")
+    base = np.stack([gx, gy], -1)[None]
+    def f(args):
+        im, fl = args
+        c = tf.concat([tf.clip_by_value(base[..., 0:1] + fl[..., 0:1], 0.0, W - 1.001),
+                       tf.clip_by_value(base[..., 1:2] + fl[..., 1:2], 0.0, H - 1.001)], -1)
+        x0 = tf.floor(c[..., 0:1]); y0 = tf.floor(c[..., 1:2])
+        wx = c[..., 0:1] - x0; wy = c[..., 1:2] - y0
+        x0i = tf.cast(x0, tf.int32); y0i = tf.cast(y0, tf.int32)
+        flat = tf.reshape(im, [H * W, 3])
+        def g(xi, yi):
+            return tf.reshape(tf.gather(flat, tf.reshape(yi * W + xi, [H * W])), [1, H, W, 3])
+        a = g(x0i, y0i); b = g(x0i + 1, y0i); c2 = g(x0i, y0i + 1); d = g(x0i + 1, y0i + 1)
+        return (a * (1 - wx) + b * wx) * (1 - wy) + (c2 * (1 - wx) + d * wx) * wy
+    y = L.Lambda(f)([img, flow])
+    return tf.keras.Model(inp, L.Permute((3, 1, 2))(y))
+
+
 MODELS = {"op_resize": m_resize_only, "op_gather": m_gather, "op_gather_warp": m_gather_warp,
-          "op_gather_nd": m_gather_nd, "op_shift25": m_shift25}
+          "op_gather_nd": m_gather_nd, "op_shift25": m_shift25,
+          "op_gwarp_640": lambda: make_gwarp(288, 640), "op_gwarp_960": lambda: make_gwarp(416, 960), "op_gwarp_1280": lambda: make_gwarp(576, 1280)}
 
 if __name__ == "__main__":
     out = "out_ops"; os.makedirs(out, exist_ok=True)

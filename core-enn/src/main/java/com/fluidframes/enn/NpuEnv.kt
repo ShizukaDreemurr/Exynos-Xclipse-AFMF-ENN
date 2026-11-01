@@ -102,4 +102,27 @@ object NpuEnv {
             "[$stage] ${t.javaClass.simpleName}: ${(t.message ?: "").take(160)}\n--- log native ---\n${NativeLog.tail(14, 1100)}"
         } finally { try { e?.close() } catch (_: Throwable) {} }
     }
+
+    /** Đo tốc độ model warp (gather) ở kích thước thật: ms/khung gồm cả chép vào/ra. */
+    fun warpBench(context: Context, assetName: String, w: Int, h: Int, s: Strategy): String {
+        val e = create(context, s.env)
+        return try {
+            val m = load(context, assetName, s, e)
+            try {
+                val ins = m.createInputBuffers(); val outs = m.createOutputBuffers()
+                val inArr = FloatArray(6 * w * h) { ((it * 31) % 255) / 255f - 0.5f }
+                repeat(4) { ins[0].writeFloat(inArr); m.run(ins, outs); outs[0].readFloat() }
+                var run = 0L; var tot = 0L; val n = 30
+                repeat(n) {
+                    val t0 = System.nanoTime(); ins[0].writeFloat(inArr)
+                    val t1 = System.nanoTime(); m.run(ins, outs)
+                    val t2 = System.nanoTime(); outs[0].readFloat(); val t3 = System.nanoTime()
+                    run += t2 - t1; tot += t3 - t0
+                }
+                ins.forEach { it.close() }; outs.forEach { it.close() }
+                "OK %.2f ms chạy NPU · %.2f ms cả chép vào/ra".format(run / n / 1e6, tot / n / 1e6)
+            } finally { try { m.close() } catch (_: Throwable) {} }
+        } catch (t: Throwable) { "${t.javaClass.simpleName}: ${(t.message ?: "").take(120)}" }
+        finally { try { e?.close() } catch (_: Throwable) {} }
+    }
 }

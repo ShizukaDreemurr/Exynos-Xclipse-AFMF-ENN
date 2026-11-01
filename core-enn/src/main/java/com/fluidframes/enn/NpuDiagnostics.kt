@@ -91,6 +91,15 @@ object NpuDiagnostics {
             }
         }
 
+        // 5c. Đo tốc độ warp bằng gather ở kích thước thật
+        for ((ls, wh) in sizes) {
+            val a = "models/flow_op_gwarp_$ls.tflite"
+            val has = try { context.assets.open(a).close(); true } catch (_: Throwable) { false }
+            if (!has) { rows += Row("Warp gather $ls", Level.INFO, "chưa có model"); continue }
+            val r = NpuEnv.warpBench(context, a, wh.first, wh.second, NpuEnv.strategies.first())
+            rows += Row("Warp gather $ls (${wh.first}x${wh.second})", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
+        }
+
         // 6. Đo tốc độ
         var ms640: Float? = null
         if (benchmark && works) {
