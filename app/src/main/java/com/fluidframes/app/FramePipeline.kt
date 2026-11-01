@@ -16,6 +16,9 @@ import com.fluidframes.telemetry.ProcTier
 import com.fluidframes.telemetry.ThermalMonitor
 import com.fluidframes.vulkan.BeginResult
 import com.fluidframes.vulkan.NativePipeline
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 /**
@@ -60,6 +63,7 @@ class FramePipeline(
         if (running) return
         running = true
         thermal.start()
+        nnThread = thread(name = "ff-npu", isDaemon = true, priority = Thread.MAX_PRIORITY) { nnLoop() }
         worker = thread(name = "ff-pipeline", isDaemon = true, priority = Thread.MAX_PRIORITY) { loop() }
     }
 
@@ -67,6 +71,8 @@ class FramePipeline(
         running = false
         worker?.join(1500)
         worker = null
+        nnThread?.join(1500)
+        nnThread = null
         thermal.stop()
         backend?.close()
         backend = null
@@ -171,14 +177,15 @@ class FramePipeline(
                 }
                 loopProcEma.add((System.nanoTime() - tProc) / 1e6f)
                 // Frame chỉ được trả lại producer khi GPU đã dùng xong (đường bất đồng bộ không chờ).
-                prev?.let { pendingRelease.addLast(usedSeq to it) }
+                prev?.let { pendingRelease.addLast(Rel(usedJob, usedSeq, it)) }
                 usedSeq = 0L
+                usedJob = null
                 prev = cur
                 drainReleases()
             }
         } finally {
             prev?.release()
-            pendingRelease.forEach { it.second.release() }
+            pendingRelease.forEach { it.slot.release() }
             pendingRelease.clear()
         }
     }
@@ -239,17 +246,29 @@ class FramePipeline(
         return vsyncCached
     }
 
-    private val pendingRelease = java.util.ArrayDeque<Pair<Long, FrameSlot>>()
+    private class NnJob(val prev: FrameSlot, val cur: FrameSlot, val slot: Int) {
+        /** 0 = NPU/GPU chưa gửi xong, > 0 = số thứ tự GPU, -1 = hỏng/bỏ. */
+        @Volatile var seq = 0L
+    }
+    private class Rel(val job: NnJob?, val seq: Long, val slot: FrameSlot)
+
+    private val pendingRelease = java.util.ArrayDeque<Rel>()
     private var usedSeq = 0L
+    private var usedJob: NnJob? = null
 
     private fun drainReleases() {
         if (pendingRelease.isEmpty()) return
         val done = try { native.doneSeq() } catch (_: Throwable) { Long.MAX_VALUE }
-        while (pendingRelease.isNotEmpty() && pendingRelease.first.first <= done) {
-            pendingRelease.removeFirst().second.release()
+        while (pendingRelease.isNotEmpty()) {
+            val r = pendingRelease.first
+            val j = r.job
+            val s = if (j != null) j.seq else r.seq
+            if (j != null && s == 0L) break      // NPU chưa chạy xong khung này
+            if (s > 0L && s > done) break        // GPU chưa dùng xong
+            pendingRelease.removeFirst().slot.release()
         }
         // An toàn: nếu ứng dụng giữ quá nhiều frame (GPU kẹt) thì giải phóng frame cũ nhất để capture không bị đói.
-        while (pendingRelease.size > 10) pendingRelease.removeFirst().second.release()
+        while (pendingRelease.size > 10) pendingRelease.removeFirst().slot.release()
     }
 
     private fun setOverlay(visible: Boolean) {
@@ -290,7 +309,73 @@ class FramePipeline(
         }
     }
 
+    // --- NPU dây chuyền: GPU chuẩn bị (loop) -> NPU chạy flow (luồng ff-npu) -> GPU ghép + present ---
+    private val nnPermits = Semaphore(2)
+    private val nnQueue = LinkedBlockingQueue<NnJob>()
+    private var nnThread: Thread? = null
+    private var nnOutW = 0
+    private var nnOutH = 0
+
+    /** Chờ NPU chạy xong mọi khung đang bay (trước khi đổi model/kích thước/đóng). */
+    private fun nnDrain() {
+        if (nnPermits.tryAcquire(2, 2, TimeUnit.SECONDS)) nnPermits.release(2)
+    }
+
+    private fun submitNn(prev: FrameSlot, cur: FrameSlot, t0: Long, d: Governor.Decision): Boolean {
+        if (cur.width != nnOutW || cur.height != nnOutH) { nnDrain(); nnOutW = cur.width; nnOutH = cur.height }
+        // NPU đang bận 2 khung: bỏ khung này (không present chen ngang để không đảo thứ tự hiển thị).
+        if (!nnPermits.tryAcquire()) { stats.framesSkipped.incrementAndGet(); return true }
+        val slot = native.nnPre(prev.hardwareBuffer, cur.hardwareBuffer)
+        if (slot < 0) { nnPermits.release(); lastError = native.lastError(); return false }
+        val job = NnJob(prev, cur, slot)
+        usedJob = job
+        nnQueue.put(job)
+        stats.captureMs.add(((t0 - cur.arrivedNs) / 1e6f).coerceAtLeast(0f))
+        procEma.add((System.nanoTime() - t0) / 1e6f)
+        lastMode = d.mode
+        lastError = ""
+        return true
+    }
+
+    private fun nnLoop() {
+        while (running) {
+            val job = nnQueue.poll(200, TimeUnit.MILLISECONDS) ?: continue
+            val t0 = System.nanoTime()
+            var seq = -1L
+            try {
+                val waited = native.nnWait(job.slot)
+                val inp = native.nnInputOf(job.slot)
+                val out = native.nnFlowOf(job.slot)
+                val b = backend
+                var ms = -1f
+                if (waited && inp != null && out != null && b != null) ms = b.run(inp, out)
+                if (ms < 0f) {
+                    if (waited) { backendFailed = true; backendLabel = "lỗi suy luận → GPU" }
+                    if (out != null) { out.clear(); out.put(ByteArray(out.capacity())); out.clear() }  // flow 0: trộn 2 khung, không méo
+                } else stats.flowMs.add(ms)
+                seq = native.nnPost(job.slot)
+            } catch (t: Throwable) {
+                lastError = t.javaClass.simpleName + ": " + t.message
+                Log.e(TAG, "NPU worker", t)
+            }
+            job.seq = if (seq > 0) seq else -1L
+            nnPermits.release()
+            if (seq > 0) {
+                val ns = native.stats()
+                stats.preMs.add(ns.preMs)
+                stats.warpMs.add(ns.warpMs)
+                stats.presentMs.add(ns.presentMs)
+                // Thông lượng của dây chuyền = thời gian bận của luồng NPU. Governor so với 0.5*chu kỳ nên nhân 0.5.
+                stats.workMs.add((System.nanoTime() - t0) / 1e6f * 0.5f)
+                stats.framesInterp.incrementAndGet()
+                stats.interpFps.tick()
+                stats.outFps.tick(); stats.outFps.tick()
+            }
+        }
+    }
+
     private fun ensureBackend(choice: FlowBackend, longSide: Int, procW: Int, procH: Int): Boolean {
+        if (choice != backendChoice || backendLoadedFor != longSide) nnDrain()
         if (choice != backendChoice) {
             backend?.close()
             backend = BackendFactory.create(context, choice)
@@ -389,11 +474,16 @@ class FramePipeline(
 
         val (pw, ph) = NativePipeline.procSize(d.tier.longSide, cur.width, cur.height)
         if (pw != native.procW || ph != native.procH) {
+            nnDrain()
             if (!native.configure(pw, ph)) { lastError = native.lastError(); passthrough(cur); return }
         }
 
         val t0 = System.nanoTime()
         var useNn = d.mode == Mode.FLOW_NN && ensureBackend(st.backend, d.tier.longSide, pw, ph)
+        if (useNn) {
+            if (submitNn(prev, cur, t0, d)) return
+            useNn = false
+        }
         if (!useNn) {
             // Đường GPU bất đồng bộ: 1 lần gửi GPU cho cả khung nội suy + khung thật, không chờ GPU xong.
             val tA = System.nanoTime()

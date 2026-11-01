@@ -68,6 +68,33 @@ FN(jobject, nativeNnFlow)(JNIEnv* env, jclass, jlong h) {
     return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
 }
 
+FN(jint, nativeNnPre)(JNIEnv* env, jclass, jlong h, jobject prev, jobject cur) {
+    AHardwareBuffer* a = AHardwareBuffer_fromHardwareBuffer(env, prev);
+    AHardwareBuffer* b = AHardwareBuffer_fromHardwareBuffer(env, cur);
+    if (!a || !b) return -1;
+    return P(h)->NnPre(a, b);
+}
+
+FN(jboolean, nativeNnWait)(JNIEnv*, jclass, jlong h, jint slot) {
+    return P(h)->NnWait(slot) ? JNI_TRUE : JNI_FALSE;
+}
+
+FN(jobject, nativeNnInputOf)(JNIEnv* env, jclass, jlong h, jint slot) {
+    size_t n = 0;
+    float* p = P(h)->NnInputOf(slot, &n);
+    return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
+}
+
+FN(jobject, nativeNnFlowOf)(JNIEnv* env, jclass, jlong h, jint slot) {
+    size_t n = 0;
+    float* p = P(h)->NnFlowOf(slot, &n);
+    return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
+}
+
+FN(jlong, nativeNnPost)(JNIEnv*, jclass, jlong h, jint slot) {
+    return static_cast<jlong>(P(h)->NnPost(slot));
+}
+
 FN(jlong, nativeGpuAsync)(JNIEnv* env, jclass, jlong h, jobject prev, jobject cur) {
     AHardwareBuffer* a = AHardwareBuffer_fromHardwareBuffer(env, prev);
     AHardwareBuffer* b = AHardwareBuffer_fromHardwareBuffer(env, cur);

@@ -66,6 +66,14 @@ public:
 
     // Gửi 1 khung nguồn (prev,cur) lên GPU không chờ; trả về số thứ tự (>0) hoặc -1 nếu lỗi. Present cả khung nội suy + khung thật.
     int64_t GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur);
+
+    // Đường NPU dây chuyền: NnPre (GPU chuẩn bị tensor, không chờ) -> NnWait -> [NPU chạy ở CPU] -> NnPost (GPU ghép + present).
+    // NnPre trả về slot >= 0, -1 lỗi/chưa sẵn sàng, -2 hết slot (đang bận hết).
+    int NnPre(AHardwareBuffer* prev, AHardwareBuffer* cur);
+    bool NnWait(int slot);
+    float* NnInputOf(int slot, size_t* bytes);
+    float* NnFlowOf(int slot, size_t* bytes);
+    int64_t NnPost(int slot);
     // Số thứ tự lớn nhất mà GPU đã chạy xong (mọi AHardwareBuffer dùng cho các lần gửi ≤ số này có thể trả lại producer).
     int64_t DoneSeq();
 
@@ -128,6 +136,12 @@ private:
     struct AFrame {
         Img lowPrev, lowCur, flow, out;
         Buf metrics;
+        Buf nnIn, nnFlow;   // riêng từng khung: NPU có thể đang chạy khung cũ trong khi GPU chuẩn bị khung mới
+        Img aux;
+        VkCommandBuffer cbPre = VK_NULL_HANDLE;
+        VkFence fencePre = VK_NULL_HANDLE;
+        bool preInflight = false, nnBusy = false;
+        AHardwareBuffer* pa = nullptr; AHardwareBuffer* pb = nullptr;
         VkDescriptorSet ds = VK_NULL_HANDLE;
         VkCommandBuffer cb = VK_NULL_HANDLE;
         VkFence fence = VK_NULL_HANDLE;
@@ -142,6 +156,7 @@ private:
     int afProcW_ = 0, afProcH_ = 0;
     uint32_t afOutW_ = 0, afOutH_ = 0;
     bool EnsureAsync(uint32_t outW, uint32_t outH);
+    int PickSlot();
     void DrainAsync();
     void PollAsync();
     void UpdateDescriptorsFor(AFrame& f, VkImageView prev, VkImageView cur);

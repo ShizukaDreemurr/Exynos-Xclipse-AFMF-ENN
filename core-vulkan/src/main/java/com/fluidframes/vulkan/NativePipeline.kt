@@ -50,6 +50,13 @@ class NativePipeline private constructor(private var handle: Long) {
     fun finish(interp: Boolean, nnFlowReady: Boolean, gapMs: Float): Boolean =
         NativeBridge.nativeFinish(handle, interp, nnFlowReady, gapMs)
 
+    /** NPU dây chuyền: slot >= 0 | -1 lỗi | -2 hết slot. */
+    fun nnPre(prev: HardwareBuffer, cur: HardwareBuffer): Int = NativeBridge.nativeNnPre(handle, prev, cur)
+    fun nnWait(slot: Int): Boolean = NativeBridge.nativeNnWait(handle, slot)
+    fun nnInputOf(slot: Int): ByteBuffer? = NativeBridge.nativeNnInputOf(handle, slot)?.order(ByteOrder.nativeOrder())
+    fun nnFlowOf(slot: Int): ByteBuffer? = NativeBridge.nativeNnFlowOf(handle, slot)?.order(ByteOrder.nativeOrder())
+    fun nnPost(slot: Int): Long = NativeBridge.nativeNnPost(handle, slot)
+
     /** Gửi 1 khung nguồn lên GPU không chờ (nội suy + khung thật). Trả số thứ tự > 0, hoặc -1 nếu lỗi. */
     fun gpuAsync(prev: HardwareBuffer, cur: HardwareBuffer): Long = NativeBridge.nativeGpuAsync(handle, prev, cur)
 
