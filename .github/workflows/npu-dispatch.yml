@@ -38,14 +38,14 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         working-directory: LiteRT/litert
-        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON -DLITECORE_HEADERS_DIR=$LCH > ../../cfg1.log 2>&1 || { echo "::error title=cfg1::$(tail -c 900 ../../cfg1.log | tr '\n' ' ')"; exit 1; }
+        run: cmake --preset android-arm64 -DANDROID_STL=c++_shared -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON -DLITECORE_HEADERS_DIR=$LCH > ../../cfg1.log 2>&1 || { echo "::error title=cfg1::$(tail -c 900 ../../cfg1.log | tr '\n' ' ')"; exit 1; }
       - name: Configure android
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         working-directory: LiteRT/litert
         run: |
           HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build 2>/dev/null && pwd || true)"
-          cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON -DLITECORE_HEADERS_DIR=$LCH ${HOST_DIR:+-DTFLITE_HOST_TOOLS_DIR=$HOST_DIR} > ../../cfg2.log 2>&1 || { echo "::error title=cfg2::$(tail -c 900 ../../cfg2.log | tr '\n' ' ')"; exit 1; }
+          cmake --preset android-arm64 -DANDROID_STL=c++_shared -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DLITERT_ENABLE_SAMSUNG=ON -DLITECORE_HEADERS_DIR=$LCH ${HOST_DIR:+-DTFLITE_HOST_TOOLS_DIR=$HOST_DIR} > ../../cfg2.log 2>&1 || { echo "::error title=cfg2::$(tail -c 900 ../../cfg2.log | tr '\n' ' ')"; exit 1; }
           echo "::notice title=samsung cfg::$(grep -i -E 'samsung|litecore' ../../cfg2.log | tr '\n' ' ' | head -c 700)"
       - name: Build
         working-directory: LiteRT/litert
