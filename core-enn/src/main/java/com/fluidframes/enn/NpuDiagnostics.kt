@@ -74,10 +74,10 @@ object NpuDiagnostics {
 
         // 5b. Chạy thử model siêu nhỏ (tách lỗi model hay lỗi cách chạy)
         for (probe in listOf("probe_nchw", "probe_nhwc")) {
-            val has = try { context.assets.open("models/$probe.tflite").close(); true } catch (_: Throwable) { false }
+            val has = try { context.assets.open("models/flow_$probe.tflite").close(); true } catch (_: Throwable) { false }
             if (!has) { rows += Row("Chạy thử $probe", Level.INFO, "chưa có model"); continue }
             for (st in NpuEnv.strategies.take(3)) {
-                val r = NpuEnv.probeRun(context, "models/$probe.tflite", st)
+                val r = NpuEnv.probeRun(context, "models/flow_$probe.tflite", st)
                 rows += Row("Chạy thử $probe · cách ${st.id}", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
             }
         }
