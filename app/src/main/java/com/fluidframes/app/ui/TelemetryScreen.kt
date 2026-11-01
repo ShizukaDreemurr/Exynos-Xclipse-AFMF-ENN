@@ -78,7 +78,7 @@ fun TelemetryScreen(
                 }
                 is State.Done -> {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        StatusChip(if (state.files.isNotEmpty()) "Đã xuất file" else "Xuất file lỗi", if (state.files.isNotEmpty()) Level.OK else Level.FAIL)
+                        StatusChip(if (state.files.isNotEmpty()) "Đã xuất file" else "Xuất file lỗi", if (state.files.isNotEmpty()) Level.OK else Level.BAD)
                     }
                     FFCard {
                         SectionTitle(state.label)
