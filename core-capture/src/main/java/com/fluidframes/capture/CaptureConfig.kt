@@ -13,7 +13,7 @@ data class CaptureConfig(
     val width: Int,
     val height: Int,
     val densityDpi: Int,
-    val maxImages: Int = 8,
+    val maxImages: Int = 14,
 ) {
     fun sameSize(o: CaptureConfig) = width == o.width && height == o.height
 

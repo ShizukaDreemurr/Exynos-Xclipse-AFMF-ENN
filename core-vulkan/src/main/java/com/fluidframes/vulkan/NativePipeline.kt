@@ -50,6 +50,12 @@ class NativePipeline private constructor(private var handle: Long) {
     fun finish(interp: Boolean, nnFlowReady: Boolean, gapMs: Float): Boolean =
         NativeBridge.nativeFinish(handle, interp, nnFlowReady, gapMs)
 
+    /** Gửi 1 khung nguồn lên GPU không chờ (nội suy + khung thật). Trả số thứ tự > 0, hoặc -1 nếu lỗi. */
+    fun gpuAsync(prev: HardwareBuffer, cur: HardwareBuffer): Long = NativeBridge.nativeGpuAsync(handle, prev, cur)
+
+    /** Số thứ tự lớn nhất đã chạy xong trên GPU: các HardwareBuffer dùng cho lần gửi ≤ số này mới được trả lại producer. */
+    fun doneSeq(): Long = NativeBridge.nativeDoneSeq(handle)
+
     fun presentReal(cur: HardwareBuffer): Boolean = NativeBridge.nativePresentReal(handle, cur)
 
     private val statsArr = FloatArray(16)

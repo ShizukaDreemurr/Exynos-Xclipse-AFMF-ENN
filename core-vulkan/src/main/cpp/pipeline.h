@@ -64,6 +64,11 @@ public:
     float* NnInput(size_t* bytes);  // NCHW float32 [1,6,procH,procW]
     float* NnFlow(size_t* bytes);   // NCHW float32 [1,5,procH/2,procW/2]: flow t0(2) flow t1(2) mask(1)
 
+    // Gửi 1 khung nguồn (prev,cur) lên GPU không chờ; trả về số thứ tự (>0) hoặc -1 nếu lỗi. Present cả khung nội suy + khung thật.
+    int64_t GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur);
+    // Số thứ tự lớn nhất mà GPU đã chạy xong (mọi AHardwareBuffer dùng cho các lần gửi ≤ số này có thể trả lại producer).
+    int64_t DoneSeq();
+
     void GetStats(float* out, int n);
     std::string LastError();
 
@@ -113,9 +118,33 @@ private:
     void CmdMemBarrier(VkCommandBuffer cb, VkPipelineStageFlags dstStages, VkAccessFlags dstAccess);
 
     bool OutPass(int mode, bool packFlow, bool acquire, bool release);
-    void CmdBlitOut(VkCommandBuffer cb, uint32_t idx);
+    void CmdBlitOut(VkCommandBuffer cb, uint32_t idx, VkImage src, uint32_t w, uint32_t h);
     bool SubmitAndWait(VkCommandBuffer cb, VkFence fence);
     bool ReadTimestamps(uint32_t first, uint32_t count, double* msOut);
+    bool ReadTimestampsFrom(VkQueryPool qp, uint32_t first, uint32_t count, double* msOut);
+
+    // --- Đường GPU bất đồng bộ (pipeline nhiều khung cùng lúc, không chờ CPU) ---
+    static constexpr int kAsync = 3;
+    struct AFrame {
+        Img lowPrev, lowCur, flow, out;
+        Buf metrics;
+        VkDescriptorSet ds = VK_NULL_HANDLE;
+        VkCommandBuffer cb = VK_NULL_HANDLE;
+        VkFence fence = VK_NULL_HANDLE;
+        VkQueryPool qp = VK_NULL_HANDLE;
+        VkSemaphore acqA = VK_NULL_HANDLE, acqB = VK_NULL_HANDLE;
+        bool inflight = false;
+        uint64_t seq = 0;
+    };
+    AFrame af_[kAsync];
+    int afNext_ = 0;
+    uint64_t submitSeq_ = 0, doneSeq_ = 0;
+    int afProcW_ = 0, afProcH_ = 0;
+    uint32_t afOutW_ = 0, afOutH_ = 0;
+    bool EnsureAsync(uint32_t outW, uint32_t outH);
+    void DrainAsync();
+    void PollAsync();
+    void UpdateDescriptorsFor(AFrame& f, VkImageView prev, VkImageView cur);
 
     bool Fail(const char* what, VkResult r);
     bool FailMsg(const std::string& msg);

@@ -132,11 +132,16 @@ class FramePipeline(
                     lastError = t.javaClass.simpleName
                     Log.e(TAG, "Lỗi xử lý frame", t)
                 }
-                prev?.release()
+                // Frame chỉ được trả lại producer khi GPU đã dùng xong (đường bất đồng bộ không chờ).
+                prev?.let { pendingRelease.addLast(usedSeq to it) }
+                usedSeq = 0L
                 prev = cur
+                drainReleases()
             }
         } finally {
             prev?.release()
+            pendingRelease.forEach { it.second.release() }
+            pendingRelease.clear()
         }
     }
 
@@ -193,6 +198,19 @@ class FramePipeline(
             } catch (_: Throwable) {}
         }
         return vsyncCached
+    }
+
+    private val pendingRelease = java.util.ArrayDeque<Pair<Long, FrameSlot>>()
+    private var usedSeq = 0L
+
+    private fun drainReleases() {
+        if (pendingRelease.isEmpty()) return
+        val done = try { native.doneSeq() } catch (_: Throwable) { Long.MAX_VALUE }
+        while (pendingRelease.isNotEmpty() && pendingRelease.first.first <= done) {
+            pendingRelease.removeFirst().second.release()
+        }
+        // An toàn: nếu ứng dụng giữ quá nhiều frame (GPU kẹt) thì giải phóng frame cũ nhất để capture không bị đói.
+        while (pendingRelease.size > 10) pendingRelease.removeFirst().second.release()
     }
 
     private fun setOverlay(visible: Boolean) {
@@ -314,7 +332,7 @@ class FramePipeline(
                 // Hết thời gian thử: nếu vẫn quá tải thì nghỉ tiếp (lâu dần), nếu ổn thì tiếp tục bình thường.
                 overloadProbeUntilNs = 0L
                 val interval = 1000f / capFps
-                if (procEma.value > 0.8f * interval) {
+                if (procEma.value > 1.3f * interval) {
                     overloadStrikes++
                     overloadUntilNs = now + minOf(60L, 8L * overloadStrikes) * 1_000_000_000L
                     passthrough(cur); return
@@ -323,7 +341,6 @@ class FramePipeline(
         }
         // Đang tụt lại (đã có frame mới hơn chờ sẵn) hoặc frame trước không liền kề (bị bỏ):
         // nội suy lúc này vừa trễ vừa sai chuyển động, và làm pipeline chậm thêm. Chỉ present frame thật.
-        if (ring.pushed.get() > cur.seq || prev.seq != cur.seq - 1) { presentOnly(cur); return }
         passthroughStreak = 0
         setOverlay(true)
 
@@ -334,6 +351,30 @@ class FramePipeline(
 
         val t0 = System.nanoTime()
         var useNn = d.mode == Mode.FLOW_NN && ensureBackend(st.backend, d.tier.longSide, pw, ph)
+        if (!useNn) {
+            // Đường GPU bất đồng bộ: 1 lần gửi GPU cho cả khung nội suy + khung thật, không chờ GPU xong.
+            val sq = native.gpuAsync(prev.hardwareBuffer, cur.hardwareBuffer)
+            if (sq > 0) {
+                usedSeq = sq
+                val ns = native.stats()
+                stats.preMs.add(ns.preMs + ns.blockMs)
+                stats.flowMs.add(0f)
+                stats.warpMs.add(ns.warpMs)
+                stats.presentMs.add(ns.presentMs)
+                stats.captureMs.add(((t0 - cur.arrivedNs) / 1e6f).coerceAtLeast(0f))
+                val procMs = (System.nanoTime() - t0) / 1e6f
+                stats.workMs.add(procMs + ns.preMs + ns.blockMs + ns.warpMs)
+                procEma.add(procMs)
+                lastMode = d.mode
+                lastError = ""
+                stats.framesInterp.incrementAndGet()
+                stats.interpFps.tick()
+                stats.outFps.tick(); stats.outFps.tick()
+                return
+            }
+            lastError = native.lastError()
+            // -1: chưa có swapchain / lỗi tạm thời -> rơi về đường đồng bộ cũ bên dưới.
+        }
         var res = native.begin(prev.hardwareBuffer, cur.hardwareBuffer, nn = useNn, blockMatch = !useNn)
         if (res == BeginResult.ERROR) { lastError = native.lastError(); passthrough(cur); return }
 
@@ -359,7 +400,7 @@ class FramePipeline(
         stats.workMs.add(workMs)
         procEma.add((System.nanoTime() - t0) / 1e6f)
         if (overloadUntilNs == 0L && overloadProbeUntilNs == 0L && procEma.count >= 30 &&
-            procEma.value > 0.8f * (1000f / capFps)) {
+            procEma.value > 1.3f * (1000f / capFps)) {
             overloadStrikes = 1
             overloadUntilNs = System.nanoTime() + 8_000_000_000L
         }

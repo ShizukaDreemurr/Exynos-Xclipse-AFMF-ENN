@@ -68,6 +68,17 @@ FN(jobject, nativeNnFlow)(JNIEnv* env, jclass, jlong h) {
     return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
 }
 
+FN(jlong, nativeGpuAsync)(JNIEnv* env, jclass, jlong h, jobject prev, jobject cur) {
+    AHardwareBuffer* a = AHardwareBuffer_fromHardwareBuffer(env, prev);
+    AHardwareBuffer* b = AHardwareBuffer_fromHardwareBuffer(env, cur);
+    if (!a || !b) return -1;
+    return static_cast<jlong>(P(h)->GpuAsync(a, b));
+}
+
+FN(jlong, nativeDoneSeq)(JNIEnv*, jclass, jlong h) {
+    return static_cast<jlong>(P(h)->DoneSeq());
+}
+
 FN(jboolean, nativeFinish)(JNIEnv*, jclass, jlong h, jboolean interp, jboolean nnFlowReady, jfloat gapMs) {
     return P(h)->Finish(interp == JNI_TRUE, nnFlowReady == JNI_TRUE, gapMs) ? JNI_TRUE : JNI_FALSE;
 }

@@ -22,6 +22,8 @@ internal object NativeBridge {
     @JvmStatic external fun nativeNnInput(handle: Long): ByteBuffer?
     @JvmStatic external fun nativeNnFlow(handle: Long): ByteBuffer?
     @JvmStatic external fun nativeFinish(handle: Long, interp: Boolean, nnFlowReady: Boolean, gapMs: Float): Boolean
+    @JvmStatic external fun nativeGpuAsync(handle: Long, prev: HardwareBuffer, cur: HardwareBuffer): Long
+    @JvmStatic external fun nativeDoneSeq(handle: Long): Long
     @JvmStatic external fun nativePresentReal(handle: Long, cur: HardwareBuffer): Boolean
     @JvmStatic external fun nativeStats(handle: Long, out: FloatArray)
     @JvmStatic external fun nativeLastError(handle: Long): String

@@ -58,6 +58,14 @@ Pipeline::~Pipeline() {
         DestroySwapchain();
         if (surface_ != VK_NULL_HANDLE) vkDestroySurfaceKHR(inst_, surface_, nullptr);
         DestroyAhbCache();
+        for (auto& f : af_) {
+            DestroyImg(f.lowPrev); DestroyImg(f.lowCur); DestroyImg(f.flow); DestroyImg(f.out);
+            DestroyBuf(f.metrics);
+            if (f.fence) vkDestroyFence(dev_, f.fence, nullptr);
+            if (f.qp) vkDestroyQueryPool(dev_, f.qp, nullptr);
+            if (f.acqA) vkDestroySemaphore(dev_, f.acqA, nullptr);
+            if (f.acqB) vkDestroySemaphore(dev_, f.acqB, nullptr);
+        }
         DestroyImg(lowPrev_);
         DestroyImg(lowCur_);
         DestroyImg(flow_);
@@ -214,6 +222,23 @@ bool Pipeline::Init(AAssetManager* assets) {
     VK_TRY(vkCreateQueryPool(dev_, &qpi, nullptr, &qp_));
 
     if (!MakeBuffer(metrics_, 64)) return false;
+    {
+        VkCommandBuffer acbs[kAsync];
+        VkCommandBufferAllocateInfo acai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        acai.commandPool = pool_;
+        acai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        acai.commandBufferCount = kAsync;
+        VK_TRY(vkAllocateCommandBuffers(dev_, &acai, acbs));
+        for (int i = 0; i < kAsync; ++i) {
+            af_[i].cb = acbs[i];
+            VkFenceCreateInfo afci{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+            VK_TRY(vkCreateFence(dev_, &afci, nullptr, &af_[i].fence));
+            VK_TRY(vkCreateQueryPool(dev_, &qpi, nullptr, &af_[i].qp));
+            VK_TRY(vkCreateSemaphore(dev_, &semi, nullptr, &af_[i].acqA));
+            VK_TRY(vkCreateSemaphore(dev_, &semi, nullptr, &af_[i].acqB));
+            if (!MakeBuffer(af_[i].metrics, 64)) return false;
+        }
+    }
     if (!CreateDescriptors()) return false;
     if (!CreatePipelines(assets)) return false;
     return true;
@@ -264,9 +289,9 @@ bool Pipeline::CreateDescriptors() {
     pli.pPushConstantRanges = &pcr;
     VK_TRY(vkCreatePipelineLayout(dev_, &pli, nullptr, &pl_));
 
-    VkDescriptorPoolSize sizes[3] = {{CIS, 4}, {SI, 5}, {SB, 3}};
+    VkDescriptorPoolSize sizes[3] = {{CIS, 4 * (1 + kAsync)}, {SI, 5 * (1 + kAsync)}, {SB, 3 * (1 + kAsync)}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dpi.maxSets = 1;
+    dpi.maxSets = 1 + kAsync;
     dpi.poolSizeCount = 3;
     dpi.pPoolSizes = sizes;
     VK_TRY(vkCreateDescriptorPool(dev_, &dpi, nullptr, &dpool_));
@@ -276,6 +301,7 @@ bool Pipeline::CreateDescriptors() {
     dai.descriptorSetCount = 1;
     dai.pSetLayouts = &dsl_;
     VK_TRY(vkAllocateDescriptorSets(dev_, &dai, &ds_));
+    for (int i = 0; i < kAsync; ++i) VK_TRY(vkAllocateDescriptorSets(dev_, &dai, &af_[i].ds));
     return true;
 }
 
@@ -604,6 +630,7 @@ Pipeline::Ahb* Pipeline::ImportAhb(AHardwareBuffer* ahb) {
 }
 
 void Pipeline::DestroyAhbCache() {
+    DrainAsync();
     for (auto& kv : ahb_) {
         vkDestroyImageView(dev_, kv.second.view, nullptr);
         vkDestroyImage(dev_, kv.second.img, nullptr);
@@ -633,6 +660,7 @@ bool Pipeline::SetSurface(ANativeWindow* window) {
 }
 
 void Pipeline::DestroySwapchain() {
+    DrainAsync();
     for (VkSemaphore s : renderDone_) vkDestroySemaphore(dev_, s, nullptr);
     renderDone_.clear();
     scImages_.clear();
@@ -680,7 +708,7 @@ bool Pipeline::CreateSwapchain() {
     ext.width = std::clamp(ext.width, caps.minImageExtent.width, std::max(caps.minImageExtent.width, caps.maxImageExtent.width));
     ext.height = std::clamp(ext.height, caps.minImageExtent.height, std::max(caps.minImageExtent.height, caps.maxImageExtent.height));
 
-    uint32_t imageCount = std::max(3u, caps.minImageCount);
+    uint32_t imageCount = std::max(5u, caps.minImageCount);
     if (caps.maxImageCount > 0 && imageCount > caps.maxImageCount) imageCount = caps.maxImageCount;
 
     VkCompositeAlphaFlagBitsKHR composite = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -791,7 +819,7 @@ bool Pipeline::ReadTimestamps(uint32_t first, uint32_t count, double* msOut) {
 }
 
 // Ghi lệnh blit out_ -> ảnh swapchain idx rồi chuyển layout sang PRESENT.
-void Pipeline::CmdBlitOut(VkCommandBuffer cb, uint32_t idx) {
+void Pipeline::CmdBlitOut(VkCommandBuffer cb, uint32_t idx, VkImage srcImg, uint32_t sw, uint32_t sh) {
     VkImage dst = scImages_[idx];
     VkImageMemoryBarrier toDst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     toDst.srcAccessMask = 0;
@@ -806,10 +834,10 @@ void Pipeline::CmdBlitOut(VkCommandBuffer cb, uint32_t idx) {
                          0, 0, nullptr, 0, nullptr, 1, &toDst);
     VkImageBlit region{};
     region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.srcOffsets[1] = {static_cast<int32_t>(out_.w), static_cast<int32_t>(out_.h), 1};
+    region.srcOffsets[1] = {static_cast<int32_t>(sw), static_cast<int32_t>(sh), 1};
     region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.dstOffsets[1] = {static_cast<int32_t>(scExtent_.width), static_cast<int32_t>(scExtent_.height), 1};
-    vkCmdBlitImage(cb, out_.img, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    vkCmdBlitImage(cb, srcImg, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    1, &region, VK_FILTER_LINEAR);
     VkImageMemoryBarrier toPresent = toDst;
     toPresent.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -818,6 +846,247 @@ void Pipeline::CmdBlitOut(VkCommandBuffer cb, uint32_t idx) {
     toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &toPresent);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Đường GPU bất đồng bộ
+// ---------------------------------------------------------------------------------------------
+
+bool Pipeline::ReadTimestampsFrom(VkQueryPool qp, uint32_t first, uint32_t count, double* msOut) {
+    if (!tsValid_ || count < 2) return false;
+    uint64_t t[8] = {};
+    VkResult r = vkGetQueryPoolResults(dev_, qp, first, count, sizeof(uint64_t) * count, t,
+                                       sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    if (r != VK_SUCCESS) return false;
+    for (uint32_t i = 0; i + 1 < count; ++i) {
+        const uint64_t d = ((t[i + 1] & tsMask_) - (t[i] & tsMask_)) & tsMask_;
+        msOut[i] = static_cast<double>(d) * tsPeriod_ / 1e6;
+    }
+    return true;
+}
+
+void Pipeline::DrainAsync() {
+    bool any = false;
+    for (auto& f : af_) {
+        if (f.inflight) {
+            vkWaitForFences(dev_, 1, &f.fence, VK_TRUE, UINT64_MAX);
+            vkResetFences(dev_, 1, &f.fence);
+            f.inflight = false;
+            any = true;
+        }
+    }
+    if (any) doneSeq_ = submitSeq_;
+}
+
+void Pipeline::PollAsync() {
+    for (auto& f : af_) {
+        if (!f.inflight) continue;
+        if (vkGetFenceStatus(dev_, f.fence) != VK_SUCCESS) continue;
+        double ms[2] = {0, 0};
+        if (ReadTimestampsFrom(f.qp, 0, 3, ms)) {
+            stats_[0] = static_cast<float>(ms[0]);
+            stats_[1] = static_cast<float>(ms[1]);
+        }
+        double wms[1] = {0};
+        if (ReadTimestampsFrom(f.qp, 3, 2, wms)) stats_[2] = static_cast<float>(wms[0]);
+        vkResetFences(dev_, 1, &f.fence);
+        f.inflight = false;
+        if (f.seq > doneSeq_) doneSeq_ = f.seq;
+    }
+}
+
+int64_t Pipeline::DoneSeq() {
+    std::lock_guard<std::mutex> lk(mu_);
+    PollAsync();
+    return static_cast<int64_t>(doneSeq_);
+}
+
+bool Pipeline::EnsureAsync(uint32_t outW, uint32_t outH) {
+    if (afProcW_ == procW_ && afProcH_ == procH_ && afOutW_ == outW && afOutH_ == outH && af_[0].out.img) return true;
+    DrainAsync();
+    vkDeviceWaitIdle(dev_);
+    const VkFormat f8 = VK_FORMAT_R8G8B8A8_UNORM;
+    const VkFormat f16 = VK_FORMAT_R16G16B16A16_SFLOAT;
+    const VkImageUsageFlags su = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    std::vector<VkImage> imgs;
+    for (auto& f : af_) {
+        if (!MakeImage(f.lowPrev, procW_, procH_, f8, VK_IMAGE_USAGE_STORAGE_BIT)) return false;
+        if (!MakeImage(f.lowCur, procW_, procH_, f8, VK_IMAGE_USAGE_STORAGE_BIT)) return false;
+        if (!MakeImage(f.flow, flowW_, flowH_, f16, su)) return false;
+        if (!MakeImage(f.out, outW, outH, f8, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) return false;
+        imgs.push_back(f.lowPrev.img); imgs.push_back(f.lowCur.img);
+        imgs.push_back(f.flow.img); imgs.push_back(f.out.img);
+    }
+    if (!TransitionToGeneral(imgs)) return false;
+    afProcW_ = procW_; afProcH_ = procH_; afOutW_ = outW; afOutH_ = outH;
+    return true;
+}
+
+void Pipeline::UpdateDescriptorsFor(AFrame& f, VkImageView prev, VkImageView cur) {
+    const VkImageLayout RO = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    const VkImageLayout GEN = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo ii[9] = {
+        {sampler_, prev, RO},
+        {sampler_, cur, RO},
+        {VK_NULL_HANDLE, f.lowPrev.view, GEN},
+        {VK_NULL_HANDLE, f.lowCur.view, GEN},
+        {VK_NULL_HANDLE, f.flow.view, GEN},
+        {sampler_, f.flow.view, GEN},
+        {VK_NULL_HANDLE, f.out.view, GEN},
+        {VK_NULL_HANDLE, aux_.view, GEN},
+        {sampler_, aux_.view, GEN},
+    };
+    VkDescriptorBufferInfo bi[3] = {
+        {nnIn_.buf, 0, VK_WHOLE_SIZE},
+        {nnFlow_.buf, 0, VK_WHOLE_SIZE},
+        {f.metrics.buf, 0, VK_WHOLE_SIZE},
+    };
+    struct Map { uint32_t binding; VkDescriptorType type; int img; int buf; };
+    const VkDescriptorType CIS = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    const VkDescriptorType SI = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    const VkDescriptorType SB = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    const Map map[kBindingCount] = {
+        {0, CIS, 0, -1}, {1, CIS, 1, -1}, {2, SI, 2, -1},  {3, SI, 3, -1},
+        {4, SB, -1, 0},  {5, SB, -1, 1},  {6, SI, 4, -1},  {7, CIS, 5, -1},
+        {8, SI, 6, -1},  {9, SB, -1, 2},  {10, SI, 7, -1}, {11, CIS, 8, -1},
+    };
+    VkWriteDescriptorSet w[kBindingCount];
+    for (int i = 0; i < kBindingCount; ++i) {
+        w[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w[i].dstSet = f.ds;
+        w[i].dstBinding = map[i].binding;
+        w[i].descriptorCount = 1;
+        w[i].descriptorType = map[i].type;
+        if (map[i].img >= 0) w[i].pImageInfo = &ii[map[i].img];
+        if (map[i].buf >= 0) w[i].pBufferInfo = &bi[map[i].buf];
+    }
+    vkUpdateDescriptorSets(dev_, kBindingCount, w, 0, nullptr);
+}
+
+int64_t Pipeline::GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (procW_ == 0) { FailMsg("GpuAsync gọi trước Configure"); return -1; }
+    if (sc_ == VK_NULL_HANDLE || scDirty_) return -1;  // chưa có swapchain: để đường legacy xử lý/dựng lại
+    PollAsync();
+    if (ahb_.size() > kMaxAhbCache) DestroyAhbCache();  // tự Drain trước khi huỷ
+    Ahb* a = ImportAhb(prev);
+    Ahb* b = a ? ImportAhb(cur) : nullptr;
+    if (!a || !b) return -1;
+    if (!EnsureAsync(b->w, b->h)) return -1;
+
+    AFrame& F = af_[afNext_];
+    if (F.inflight) {  // khung cũ nhất trong vòng — thường đã xong từ lâu
+        vkWaitForFences(dev_, 1, &F.fence, VK_TRUE, UINT64_MAX);
+        PollAsync();
+        if (F.inflight) { vkResetFences(dev_, 1, &F.fence); F.inflight = false; }
+    }
+    const auto tAcq = Clock::now();
+    uint32_t idxA = 0, idxB = 0;
+    VkResult r1 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, F.acqA, VK_NULL_HANDLE, &idxA);
+    if (r1 != VK_SUCCESS && r1 != VK_SUBOPTIMAL_KHR) {
+        if (r1 == VK_ERROR_OUT_OF_DATE_KHR) scDirty_ = true;
+        return -1;
+    }
+    VkResult r2 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, F.acqB, VK_NULL_HANDLE, &idxB);
+    if (r2 != VK_SUCCESS && r2 != VK_SUBOPTIMAL_KHR) { scDirty_ = true; return -1; }
+    if (r1 == VK_SUBOPTIMAL_KHR || r2 == VK_SUBOPTIMAL_KHR) scDirty_ = true;
+    const double acqMs = MsSince(tAcq);
+
+    memset(F.metrics.ptr, 0, 64);
+    UpdateDescriptorsFor(F, a->view, b->view);
+
+    PushConstants pc{};
+    pc.srcW = static_cast<int32_t>(b->w);
+    pc.srcH = static_cast<int32_t>(b->h);
+    pc.lowW = procW_;
+    pc.lowH = procH_;
+    pc.flowW = flowW_;
+    pc.flowH = flowH_;
+    pc.outW = static_cast<int32_t>(F.out.w);
+    pc.outH = static_cast<int32_t>(F.out.h);
+    pc.t = 0.5f;
+    pc.mode = 1;
+    pc.useNN = 0;
+    pc.flowScaleX = 1.0f / static_cast<float>(procW_);
+    pc.flowScaleY = 1.0f / static_cast<float>(procH_);
+    pc.staticThr = 0.02f;
+    pc.occThr = 0.14f;
+
+    VkCommandBuffer cb = F.cb;
+    if (vkResetCommandBuffer(cb, 0) != VK_SUCCESS) { scDirty_ = true; return -1; }
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cb, &bi) != VK_SUCCESS) { scDirty_ = true; return -1; }
+    if (tsValid_) {
+        vkCmdResetQueryPool(cb, F.qp, 0, 8);
+        vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, F.qp, 0);
+    }
+    CmdAcquire(cb, a);
+    if (b != a) CmdAcquire(cb, b);
+    vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pl_, 0, 1, &F.ds, 0, nullptr);
+    vkCmdPushConstants(cb, pl_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pc);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pPre_);
+    vkCmdDispatch(cb, CeilDiv(procW_, 8), CeilDiv(procH_, 8), 1);
+    CmdMemBarrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, F.qp, 1);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pBlock_);
+    const int bw = static_cast<int>(CeilDiv(procW_, kBlock));
+    const int bh = static_cast<int>(CeilDiv(procH_, kBlock));
+    vkCmdDispatch(cb, CeilDiv(bw, 8), CeilDiv(bh, 8), 1);
+    CmdMemBarrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, F.qp, 2);
+
+    // Khung nội suy -> ảnh A
+    if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, F.qp, 3);
+    vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pWarp_);
+    vkCmdDispatch(cb, CeilDiv(static_cast<int>(F.out.w), 8), CeilDiv(static_cast<int>(F.out.h), 8), 1);
+    CmdMemBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+    if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, F.qp, 4);
+    CmdBlitOut(cb, idxA, F.out.img, F.out.w, F.out.h);
+    // Khung thật -> ảnh B
+    VkMemoryBarrier war{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    war.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    war.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &war, 0, nullptr, 0, nullptr);
+    pc.mode = 0;
+    vkCmdPushConstants(cb, pl_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pc);
+    vkCmdDispatch(cb, CeilDiv(static_cast<int>(F.out.w), 8), CeilDiv(static_cast<int>(F.out.h), 8), 1);
+    CmdMemBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+    CmdRelease(cb, a);
+    if (b != a) CmdRelease(cb, b);
+    CmdBlitOut(cb, idxB, F.out.img, F.out.w, F.out.h);
+    if (vkEndCommandBuffer(cb) != VK_SUCCESS) { scDirty_ = true; return -1; }
+
+    const VkSemaphore waits[2] = {F.acqA, F.acqB};
+    const VkPipelineStageFlags ws[2] = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
+    const VkSemaphore sigs[2] = {renderDone_[idxA], renderDone_[idxB]};
+    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    si.waitSemaphoreCount = 2;
+    si.pWaitSemaphores = waits;
+    si.pWaitDstStageMask = ws;
+    si.commandBufferCount = 1;
+    si.pCommandBuffers = &cb;
+    si.signalSemaphoreCount = 2;
+    si.pSignalSemaphores = sigs;
+    if (vkQueueSubmit(queue_, 1, &si, F.fence) != VK_SUCCESS) { FailMsg("submit async"); scDirty_ = true; return -1; }
+    F.inflight = true;
+    F.seq = ++submitSeq_;
+    afNext_ = (afNext_ + 1) % kAsync;
+
+    for (uint32_t id : {idxA, idxB}) {
+        VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+        pi.waitSemaphoreCount = 1;
+        pi.pWaitSemaphores = &renderDone_[id];
+        pi.swapchainCount = 1;
+        pi.pSwapchains = &sc_;
+        pi.pImageIndices = &id;
+        const VkResult pr = vkQueuePresentKHR(queue_, &pi);
+        if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) scDirty_ = true;
+        else if (pr != VK_SUCCESS) Fail("vkQueuePresentKHR", pr);
+    }
+    stats_[7] = static_cast<float>(acqMs);
+    return static_cast<int64_t>(F.seq);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -860,7 +1129,7 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
     pc_.occThr = 0.14f;
 
     // Đường gộp (GPU block-match): lấy trước 2 ảnh swapchain, dựng cả khung nội suy lẫn khung thật trong 1 lần gửi GPU.
-    bool fused = blockMatch && !nn && sc_ != VK_NULL_HANDLE && !scDirty_;
+    bool fused = false;  // đã thay bằng GpuAsync
     uint32_t idxA = 0, idxB = 0;
     if (fused) {
         const VkResult r1 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, acquireSem_, VK_NULL_HANDLE, &idxA);
@@ -913,7 +1182,7 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
         vkCmdDispatch(cb, CeilDiv(static_cast<int>(out_.w), 8), CeilDiv(static_cast<int>(out_.h), 8), 1);
         CmdMemBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
         if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, qp_, 4);
-        CmdBlitOut(cb, idxA);
+        CmdBlitOut(cb, idxA, out_.img, out_.w, out_.h);
         // Khung thật -> ảnh B (out_ phải đọc xong bởi blit trước khi ghi đè)
         VkMemoryBarrier war{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
         war.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -926,7 +1195,7 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
         CmdMemBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
         CmdRelease(cb, a);
         if (b != a) CmdRelease(cb, b);
-        CmdBlitOut(cb, idxB);
+        CmdBlitOut(cb, idxB, out_.img, out_.w, out_.h);
         pc_.mode = 1;
     }
     if (vkEndCommandBuffer(cb) != VK_SUCCESS) { FailMsg("end cmdPre"); if (fused) scDirty_ = true; return kBeginError; }
@@ -994,7 +1263,7 @@ bool Pipeline::Finish(bool interp, bool nnFlowReady, float gapMs) {
             bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
             VK_TRY(vkResetCommandBuffer(cmdBlit_, 0));
             VK_TRY(vkBeginCommandBuffer(cmdBlit_, &bi));
-            CmdBlitOut(cmdBlit_, fusedA_);
+            CmdBlitOut(cmdBlit_, fusedA_, out_.img, out_.w, out_.h);
             VK_TRY(vkEndCommandBuffer(cmdBlit_));
             if (!SubmitAndWait(cmdBlit_, fenceB_)) okf = false;
         }
@@ -1166,7 +1435,7 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
 }
 
 void Pipeline::GetStats(float* out, int n) {
-    std::lock_guard<std::mutex> lk(mu_);
+    // Không khoá mu_: GpuAsync có thể đang chờ ảnh swapchain (backpressure); đọc float căn lề là an toàn.
     const int c = std::min(n, 16);
     for (int i = 0; i < c; ++i) out[i] = stats_[i];
 }
