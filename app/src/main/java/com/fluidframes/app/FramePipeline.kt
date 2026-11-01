@@ -202,6 +202,7 @@ class FramePipeline(
         }
     }
 
+    private var dtEma = 0.0
     private var nextProbeNs = 0L
     private var probeUntilNs = 0L
     private var hzCached = 60f
@@ -344,7 +345,11 @@ class FramePipeline(
         // Dùng tần số quét HIỆN TẠI (không phải tối đa): nếu màn hình chưa lên 120 Hz mà vẫn nội suy thì
         // mỗi khung phải present 2 lần ở 60 Hz => src bị kẹt ở 30 fps (tệ hơn chơi trần).
         // Giữ overlay hiện (presentOnly) vài giây để phiếu 120 Hz của overlay có hiệu lực, hết hạn thì trả game về trực tiếp.
-        if (dtMs / 2.0 < 0.95 * 1000.0 / curHz().coerceAtLeast(24f)) {
+        // Dùng khoảng cách TRUNG BÌNH (không phải từng khung): game 30 fps hay lệch 28–36 ms, dùng từng khung làm
+        // nội suy chập chờn bật/tắt dù nhịp thật vẫn đủ chỗ cho khung nội suy.
+        if (dtMs in 3.0..120.0) dtEma = if (dtEma == 0.0) dtMs else dtEma * 0.9 + dtMs * 0.1
+        val dtRef = if (dtEma > 0.0) dtEma else dtMs
+        if (dtRef / 2.0 < 0.95 * 1000.0 / curHz().coerceAtLeast(24f)) {
             val now = System.nanoTime()
             if (now > nextProbeNs) { probeUntilNs = now + 4_000_000_000L; nextProbeNs = now + 40_000_000_000L }
             if (now < probeUntilNs) presentOnly(cur) else passthrough(cur)
