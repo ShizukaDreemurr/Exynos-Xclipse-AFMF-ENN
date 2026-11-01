@@ -24,7 +24,7 @@ android {
 
     buildFeatures { compose = true }
 
-    packaging { jniLibs { useLegacyPackaging = true } }
+    packaging { jniLibs { useLegacyPackaging = true; pickFirsts += "**/libLiteRt.so" } }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
