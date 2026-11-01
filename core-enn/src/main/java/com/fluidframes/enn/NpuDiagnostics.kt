@@ -60,6 +60,7 @@ object NpuDiagnostics {
 
         // 5. Thử từng cách nạp lên NPU
         var works = false
+        var runs = false
         for (s in NpuEnv.strategies) {
             val e = NpuEnv.create(context, s.env)
             try {
@@ -72,12 +73,20 @@ object NpuDiagnostics {
             } finally { try { e?.close() } catch (_: Throwable) {} }
         }
 
+        // 5a. Bộ nhớ DMA-BUF (NPU Samsung chỉ nhận loại này)
+        val heapInfo = listOf("/dev/dma_heap", "/dev/dma_heap/system", "/dev/dma_heap/system-uncached", "/dev/ion").joinToString("; ") { p ->
+            val f = java.io.File(p)
+            "$p: " + (if (!f.exists()) "không thấy" else "có, đọc=${f.canRead()} ghi=${f.canWrite()}" + (f.list()?.let { " [${it.take(12).joinToString(",")}]" } ?: ""))
+        }
+        rows += Row("Heap DMA-BUF", Level.INFO, heapInfo)
+
         // 5b. Chạy thử model siêu nhỏ (tách lỗi model hay lỗi cách chạy)
         for (probe in listOf("probe_nchw", "probe_nhwc")) {
             val has = try { context.assets.open("models/flow_$probe.tflite").close(); true } catch (_: Throwable) { false }
             if (!has) { rows += Row("Chạy thử $probe", Level.INFO, "chưa có model"); continue }
             for (st in NpuEnv.strategies.take(3)) {
                 val r = NpuEnv.probeRun(context, "models/flow_$probe.tflite", st)
+                if (r.startsWith("OK")) runs = true
                 rows += Row("Chạy thử $probe · cách ${st.id}", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
             }
         }
@@ -107,6 +116,7 @@ object NpuDiagnostics {
         }
         if (!works) rows += Row("Kết luận", Level.WARN,
             "NPU chưa chạy được model. Ứng dụng sẽ dùng GPU (block-matching) cho tới khi có cách nạp thành công.")
+        else if (!runs) rows += Row("Kết luận", Level.WARN, "NPU nạp được model nhưng chạy thì lỗi (kể cả model 1 lớp) — lỗi ở đường chạy/bộ nhớ, không phải model.")
         else rows += Row("Kết luận", Level.OK, "NPU Exynos chạy được model. Lưu ý: model hiện dùng trọng số ngẫu nhiên.")
         return Report(rows, ms640, works)
     }
