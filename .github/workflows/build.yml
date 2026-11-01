@@ -13,12 +13,25 @@ jobs:
 
       - name: Unzip source
         run: |
+          set -e
           unzip -o Exynos-Xclipse-AFMF-ENN-2.1-MaxFPS-2600.zip
-          if [ -d Exynos-Xclipse-AFMF-ENN-feat-initial-import ]; then
-            shopt -s dotglob
-            mv Exynos-Xclipse-AFMF-ENN-feat-initial-import/* .
-            rmdir Exynos-Xclipse-AFMF-ENN-feat-initial-import || true
+          SRC="Exynos-Xclipse-AFMF-ENN-feat-initial-import"
+          if [ -d "$SRC" ]; then
+            shopt -s dotglob nullglob
+            for item in "$SRC"/*; do
+              base=$(basename "$item")
+              if [ "$base" = ".github" ]; then
+                # giữ workflow hiện tại, chỉ copy thêm nếu có
+                mkdir -p .github/workflows
+                cp -rn "$item"/workflows/* .github/workflows/ 2>/dev/null || true
+              else
+                rm -rf "./$base"
+                mv "$item" .
+              fi
+            done
+            rm -rf "$SRC"
           fi
+          echo "=== root after unzip ==="
           ls -la
 
       - name: Set up JDK 17
@@ -30,13 +43,13 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Make gradlew executable / create wrapper if needed
+      - name: Gradle wrapper
         run: |
           if [ -f gradlew ]; then
             chmod +x gradlew
           else
             gradle wrapper --gradle-version 8.7 || true
-            chmod +x gradlew || true
+            chmod +x gradlew 2>/dev/null || true
           fi
 
       - name: Build debug APK
