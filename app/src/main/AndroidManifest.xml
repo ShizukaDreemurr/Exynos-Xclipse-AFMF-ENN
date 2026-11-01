@@ -11,6 +11,7 @@
     <!-- Hiện notification của FGS trên Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Tuỳ chọn: người dùng cấp bằng adb để ép tần số quét toàn hệ thống -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <!-- Liệt kê app có biểu tượng khởi chạy (để chọn app cần đo) mà không cần QUERY_ALL_PACKAGES -->

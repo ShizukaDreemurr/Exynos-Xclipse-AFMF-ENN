@@ -49,7 +49,7 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
                 // Bỏ phiếu cho tần số quét mục tiêu của người dùng.
                 runCatching {
                     val hz = targetMode()?.refreshRate ?: 60f
-                    holder.surface.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT,
+                    holder.surface.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE,
                         Surface.CHANGE_FRAME_RATE_ALWAYS)
                 }
                 listener.onSurface(holder.surface, w, h)

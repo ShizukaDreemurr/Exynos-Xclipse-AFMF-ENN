@@ -6,8 +6,8 @@ import android.provider.Settings
 import android.util.Log
 
 /**
- * Ép tần số quét toàn hệ thống (min/peak_refresh_rate) khi dịch vụ chạy — chỉ làm được nếu người dùng đã
- * cấp WRITE_SECURE_SETTINGS bằng adb một lần. Không có quyền thì bỏ qua (overlay vẫn bỏ phiếu tần số quét).
+ * Ép tần số quét toàn hệ thống (min/peak_refresh_rate) khi dịch vụ chạy — làm được nếu người dùng cấp
+ * “Sửa đổi cài đặt hệ thống” (WRITE_SETTINGS, ngay trong app, không cần máy tính) hoặc WRITE_SECURE_SETTINGS qua adb. Không có quyền thì bỏ qua (overlay vẫn bỏ phiếu tần số quét).
  * Khôi phục giá trị cũ khi dừng.
  */
 object RefreshForce {
@@ -15,7 +15,8 @@ object RefreshForce {
     private var saved: Pair<Float, Float>? = null
 
     fun canForce(c: Context) =
-        c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED
+        Settings.System.canWrite(c) ||
+            c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") == PackageManager.PERMISSION_GRANTED
 
     fun apply(c: Context, hz: Float): Boolean {
         if (!canForce(c)) return false

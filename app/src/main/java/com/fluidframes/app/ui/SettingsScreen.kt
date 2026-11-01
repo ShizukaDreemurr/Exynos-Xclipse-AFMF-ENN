@@ -10,7 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.fluidframes.overlay.FluidSettings
 import com.fluidframes.telemetry.FlowBackend
@@ -106,8 +110,20 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
                 Text("Overlay xin hệ thống chạy đúng tần số này, và (nếu đã cấp quyền bên dưới) ép luôn trên toàn hệ thống trong lúc dịch vụ chạy. " +
                     "Game hoặc Game Booster của Samsung vẫn có thể từ chối nếu không có quyền ép.",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
+                Spacer(Modifier.height(10.dp))
+                val ctx = LocalContext.current
+                val canWrite = Settings.System.canWrite(ctx)
+                Text(if (canWrite) "Quyền sửa cài đặt hệ thống: ĐÃ CẤP. Khi dịch vụ chạy, app đặt tần số quét tối thiểu/tối đa theo mục trên (và trả lại khi dừng). Game Booster/GOS của Samsung vẫn có thể ghi đè."
+                    else "Quyền sửa cài đặt hệ thống: CHƯA CẤP.",
+                    style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
+                if (!canWrite) {
+                    Spacer(Modifier.height(8.dp))
+                    PillButton("Cấp quyền ép tần số (không cần máy tính)", {
+                        ctx.startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:" + ctx.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    })
+                }
                 Spacer(Modifier.height(6.dp))
-                Text("Cấp quyền ép một lần (chạy trên máy tính, bật gỡ lỗi USB): adb shell pm grant com.fluidframes android.permission.WRITE_SECURE_SETTINGS",
+                Text("Hoặc cấp qua máy tính (chạy trên máy tính, bật gỡ lỗi USB): adb shell pm grant com.fluidframes android.permission.WRITE_SECURE_SETTINGS",
                     style = MaterialTheme.typography.labelMedium, color = FF.c.muted)
             }
 

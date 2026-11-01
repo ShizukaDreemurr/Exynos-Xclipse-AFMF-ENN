@@ -94,7 +94,13 @@ class ProjectionService : Service() {
                 }
             },
             initial = store.load(),
-            onSettings = { store.save(it) },
+            onSettings = {
+                val oldHz = store.load().targetHz
+                store.save(it)
+                if (it.targetHz != oldHz) {
+                    if (it.targetHz > 0) RefreshForce.apply(this, it.targetHz.toFloat()) else RefreshForce.restore(this)
+                }
+            },
             onStopRequested = { stopSelf() },
             onRecordToggle = {
                 if (com.fluidframes.app.telemetry.TelemetryRecorder.isRecording) {
