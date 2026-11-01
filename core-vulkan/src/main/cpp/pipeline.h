@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 
 #include <android/asset_manager.h>
 #include <android/hardware_buffer.h>
@@ -50,6 +51,8 @@ public:
 
     // Cấp phát tài nguyên ở độ phân giải xử lý (procW/procH bội số 32).
     bool Configure(int procW, int procH);
+    /** Tinh chỉnh runtime: ngưỡng vùng tĩnh, ngưỡng che khuất, cờ (bit0 = tắt bảo vệ HUD). */
+    void SetTune(float staticThr, float occThr, int flags) { tuneStatic_ = staticThr; tuneOcc_ = occThr; tuneFlags_ = flags; }
 
     // Giai đoạn 1: import 2 frame, preprocess, (tùy chọn) block-match. Chặn tới khi GPU xong.
     int Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool blockMatch);
@@ -66,6 +69,9 @@ public:
 
     // Gửi 1 khung nguồn (prev,cur) lên GPU không chờ; trả về số thứ tự (>0) hoặc -1 nếu lỗi. Present cả khung nội suy + khung thật.
     int64_t GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur);
+    std::atomic<float> tuneStatic_{0.02f};
+    std::atomic<float> tuneOcc_{0.14f};
+    std::atomic<int> tuneFlags_{0};
 
     // Đường NPU dây chuyền: NnPre (GPU chuẩn bị tensor, không chờ) -> NnWait -> [NPU chạy ở CPU] -> NnPost (GPU ghép + present).
     // NnPre trả về slot >= 0, -1 lỗi/chưa sẵn sàng, -2 hết slot (đang bận hết).

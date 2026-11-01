@@ -17,6 +17,10 @@ data class FluidSettings(
     val outLongSide: Int = 0,
     /** Luôn nội suy: bỏ qua guard tần số quét (không tự trả game về passthrough). */
     val alwaysInterp: Boolean = false,
+    /** Độ nhạy chuyển động: 0 thấp (an toàn) | 1 vừa | 2 cao (tin flow hơn). */
+    val sensitivity: Int = 1,
+    /** Bảo vệ HUD/chữ đứng yên. */
+    val hudProtect: Boolean = true,
 )
 
 class SettingsStore(context: Context) {
@@ -31,6 +35,8 @@ class SettingsStore(context: Context) {
         targetHz = prefs.getInt("hz", 0),
         outLongSide = prefs.getInt("outres", 0),
         alwaysInterp = prefs.getBoolean("always", false),
+        sensitivity = prefs.getInt("sens", 1),
+        hudProtect = prefs.getBoolean("hudprot", true),
     )
 
     fun save(s: FluidSettings) {
@@ -43,6 +49,8 @@ class SettingsStore(context: Context) {
             .putInt("hz", s.targetHz)
             .putInt("outres", s.outLongSide)
             .putBoolean("always", s.alwaysInterp)
+            .putInt("sens", s.sensitivity)
+            .putBoolean("hudprot", s.hudProtect)
             .apply()
     }
 

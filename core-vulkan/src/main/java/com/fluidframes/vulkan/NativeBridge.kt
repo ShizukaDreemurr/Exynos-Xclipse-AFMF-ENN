@@ -15,6 +15,7 @@ internal object NativeBridge {
     @JvmStatic external fun nativeCreateError(): String
     @JvmStatic external fun nativeDestroy(handle: Long)
     @JvmStatic external fun nativeSetSurface(handle: Long, surface: Surface?): Boolean
+    @JvmStatic external fun nativeSetTune(handle: Long, staticThr: Float, occThr: Float, flags: Int)
     @JvmStatic external fun nativeConfigure(handle: Long, procW: Int, procH: Int): Boolean
     @JvmStatic external fun nativeBegin(
         handle: Long, prev: HardwareBuffer, cur: HardwareBuffer, nn: Boolean, blockMatch: Boolean,

@@ -1026,8 +1026,9 @@ int64_t Pipeline::GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur) {
     pc.useNN = 0;
     pc.flowScaleX = 1.0f / static_cast<float>(procW_);
     pc.flowScaleY = 1.0f / static_cast<float>(procH_);
-    pc.staticThr = 0.02f;
-    pc.occThr = 0.14f;
+    pc.staticThr = tuneStatic_.load();
+    pc.occThr = tuneOcc_.load();
+    pc.pad0 = tuneFlags_.load();
 
     VkCommandBuffer cb = F.cb;
     if (vkResetCommandBuffer(cb, 0) != VK_SUCCESS) { scDirty_ = true; return -1; }
@@ -1147,8 +1148,9 @@ int Pipeline::NnPre(AHardwareBuffer* prev, AHardwareBuffer* cur) {
     pc.useNN = 1;
     pc.flowScaleX = 1.0f / static_cast<float>(procW_);
     pc.flowScaleY = 1.0f / static_cast<float>(procH_);
-    pc.staticThr = 0.02f;
-    pc.occThr = 0.14f;
+    pc.staticThr = tuneStatic_.load();
+    pc.occThr = tuneOcc_.load();
+    pc.pad0 = tuneFlags_.load();
 
     VkCommandBuffer cb = F.cbPre;
     if (vkResetCommandBuffer(cb, 0) != VK_SUCCESS) return -1;
@@ -1248,8 +1250,9 @@ int64_t Pipeline::NnPost(int slot) {
     pc.useNN = 1;
     pc.flowScaleX = 1.0f / static_cast<float>(procW_);
     pc.flowScaleY = 1.0f / static_cast<float>(procH_);
-    pc.staticThr = 0.02f;
-    pc.occThr = 0.14f;
+    pc.staticThr = tuneStatic_.load();
+    pc.occThr = tuneOcc_.load();
+    pc.pad0 = tuneFlags_.load();
 
     VkCommandBuffer cb = F.cb;
     if (vkResetCommandBuffer(cb, 0) != VK_SUCCESS) { scDirty_ = true; return giveUp(); }
@@ -1350,8 +1353,9 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
     pc_.useNN = nn ? 1 : 0;
     pc_.flowScaleX = 1.0f / static_cast<float>(procW_);
     pc_.flowScaleY = 1.0f / static_cast<float>(procH_);
-    pc_.staticThr = 0.02f;
-    pc_.occThr = 0.14f;
+    pc_.staticThr = tuneStatic_.load();
+    pc_.occThr = tuneOcc_.load();
+    pc_.pad0 = tuneFlags_.load();
 
     // Đường gộp (GPU block-match): lấy trước 2 ảnh swapchain, dựng cả khung nội suy lẫn khung thật trong 1 lần gửi GPU.
     bool fused = false;  // đã thay bằng GpuAsync

@@ -49,6 +49,10 @@ FN(jboolean, nativeConfigure)(JNIEnv*, jclass, jlong h, jint w, jint hh) {
     return P(h)->Configure(w, hh) ? JNI_TRUE : JNI_FALSE;
 }
 
+FN(void, nativeSetTune)(JNIEnv*, jclass, jlong h, jfloat st, jfloat oc, jint flags) {
+    P(h)->SetTune(st, oc, flags);
+}
+
 FN(jint, nativeBegin)(JNIEnv* env, jclass, jlong h, jobject prev, jobject cur, jboolean nn, jboolean bm) {
     AHardwareBuffer* a = AHardwareBuffer_fromHardwareBuffer(env, prev);
     AHardwareBuffer* b = AHardwareBuffer_fromHardwareBuffer(env, cur);

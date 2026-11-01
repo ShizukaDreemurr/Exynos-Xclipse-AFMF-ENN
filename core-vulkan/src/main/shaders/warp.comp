@@ -54,7 +54,7 @@ void main() {
     }
 
     // Nở mặt nạ HUD ~3px: pixel nằm sát chữ/viền HUD giữ nguyên khung thật, flow nền không lem vào HUD.
-    {
+    if ((pc.pad0 & 1) == 0) {
         vec2 px = 1.0 / vec2(float(pc.outW), float(pc.outH));
         vec2 r = px * 3.0;
         if (hudEdge(uv + vec2(r.x, 0.0), px) || hudEdge(uv - vec2(r.x, 0.0), px) ||
@@ -90,6 +90,7 @@ void main() {
     vec2 qa = uv + fl.xy, qb = uv + fl.zw;
     bool aHud = maxAbs(texture(uPrev, qa).rgb - texture(uCur, qa).rgb) < thr && length(fl.xy) > 0.0015;
     bool bHud = maxAbs(texture(uPrev, qb).rgb - texture(uCur, qb).rgb) < thr && length(fl.zw) > 0.0015;
+    if ((pc.pad0 & 1) != 0) { aHud = false; bHud = false; }
     if (aHud && bHud) { imageStore(outImg, p, vec4(cur, 1.0)); return; }
     float mask = (pc.useNN != 0) ? texture(uAux, uv).r : 0.5;  // trọng số phía prev
     if (aHud) { mask = 0.0; err = 0.0; }

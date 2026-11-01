@@ -112,6 +112,9 @@ class FramePipeline(
             "cho_frame_ms" to idleEma.value.toDouble(),
             "process_ms" to loopProcEma.value.toDouble(),
             "gpuasync_ms" to asyncCallEma.value.toDouble(),
+            "npu_chep_vao_ms" to ((backend as? com.fluidframes.enn.LiteRtBackend)?.copyInMs ?: 0f).toDouble(),
+            "npu_chay_ms" to ((backend as? com.fluidframes.enn.LiteRtBackend)?.runMs ?: 0f).toDouble(),
+            "npu_chep_ra_ms" to ((backend as? com.fluidframes.enn.LiteRtBackend)?.copyOutMs ?: 0f).toDouble(),
             "drop_pct" to (s.dropRate() * 100f).toDouble(),
             "frames_in" to s.framesIn.get(),
             "frames_noi_suy" to s.framesInterp.get(),
@@ -397,8 +400,18 @@ class FramePipeline(
         return true
     }
 
+    private var tuneKey = -1
+    private fun applyTune(st: com.fluidframes.overlay.FluidSettings) {
+        val key = st.sensitivity * 2 + (if (st.hudProtect) 0 else 1)
+        if (key == tuneKey) return
+        tuneKey = key
+        val (sThr, oThr) = when (st.sensitivity) { 0 -> 0.03f to 0.10f; 2 -> 0.01f to 0.20f; else -> 0.02f to 0.14f }
+        native.setTune(sThr, oThr, if (st.hudProtect) 0 else 1)
+    }
+
     private fun process(prev: FrameSlot?, cur: FrameSlot) {
         val st = settings()
+        applyTune(st)
         if (prev == null) {
             passthrough(cur)
             return

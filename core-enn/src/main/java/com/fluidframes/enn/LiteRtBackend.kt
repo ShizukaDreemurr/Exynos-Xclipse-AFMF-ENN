@@ -22,6 +22,11 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
     private var outArr = FloatArray(0)
     private var usedNpu = false
 
+    /** Thời gian từng đoạn trong run() (EMA, ms) để biết chi phí chép dữ liệu so với NPU chạy thật. */
+    @Volatile var copyInMs = 0f; private set
+    @Volatile var runMs = 0f; private set
+    @Volatile var copyOutMs = 0f; private set
+
     var lastError: String = ""
         private set
     var lastRunError: String = ""
@@ -73,14 +78,20 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
             input.asFloatBuffer().get(inArr)
             stage = "ghi vào buffer NPU"
             inBufs[0].writeFloat(inArr)
+            val t1 = System.nanoTime()
             stage = "chạy model"
             m.run(inBufs, outBufs)
+            val t2 = System.nanoTime()
             stage = "đọc output"
             outArr = outBufs[0].readFloat()
             stage = "chép output"
             output.position(0)
             output.asFloatBuffer().put(outArr)
-            (System.nanoTime() - t0) / 1e6f
+            val t3 = System.nanoTime()
+            copyInMs = copyInMs * 0.85f + (t1 - t0) / 1e6f * 0.15f
+            runMs = runMs * 0.85f + (t2 - t1) / 1e6f * 0.15f
+            copyOutMs = copyOutMs * 0.85f + (t3 - t2) / 1e6f * 0.15f
+            (t3 - t0) / 1e6f
         } catch (t: Throwable) {
             lastRunError = "[$stage] ${t.javaClass.simpleName}: ${(t.message ?: "").take(220)} (in=${inArr.size}f, out=${outArr.size}f)"
             Log.e(TAG, "Suy luận lỗi: $lastRunError", t)

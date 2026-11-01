@@ -119,13 +119,20 @@ class MenuOverlay(
         col.addView(ui.toggleRow("Nội suy khung hình", { settings.enabled }) {
             settings = settings.copy(enabled = it); onChange(settings)
         })
-        col.addView(ui.caption("Độ phân giải xử lý"))
+        col.addView(ui.caption("Model flow / độ phân giải xử lý (360p=640, 540p=960, 720p=1280)"))
         col.addView(ui.segmented(listOf("Tự động", "720p", "540p", "360p"), tierIndex(settings.tier)) {
             settings = settings.copy(tier = TIERS[it]); onChange(settings)
         })
         col.addView(ui.caption("Công cụ tính flow"))
         col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
             settings = settings.copy(backend = BACKENDS[it]); onChange(settings)
+        })
+        col.addView(ui.caption("Độ nhạy chuyển động"))
+        col.addView(ui.segmented(listOf("Thấp", "Vừa", "Cao"), settings.sensitivity.coerceIn(0, 2)) {
+            settings = settings.copy(sensitivity = it); onChange(settings)
+        })
+        col.addView(ui.toggleRow("Bảo vệ HUD / chữ đứng yên", { settings.hudProtect }) {
+            settings = settings.copy(hudProtect = it); onChange(settings)
         })
         col.addView(ui.toggleRow("Luôn nội suy (không passthrough)", { settings.alwaysInterp }) {
             settings = settings.copy(alwaysInterp = it); onChange(settings)

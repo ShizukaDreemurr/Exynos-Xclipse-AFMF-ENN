@@ -26,6 +26,8 @@ class NativePipeline private constructor(private var handle: Long) {
 
     fun setSurface(surface: Surface?): Boolean = NativeBridge.nativeSetSurface(handle, surface)
 
+    fun setTune(staticThr: Float, occThr: Float, flags: Int) = NativeBridge.nativeSetTune(handle, staticThr, occThr, flags)
+
     fun configure(w: Int, h: Int): Boolean {
         val ok = NativeBridge.nativeConfigure(handle, w, h)
         if (ok) { procW = w; procH = h }
