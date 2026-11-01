@@ -940,6 +940,14 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     }
     pc_.mode = mode;
 
+    const auto t0 = Clock::now();
+    uint32_t idx = 0;
+    const VkResult ar = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, acquireSem_, VK_NULL_HANDLE, &idx);
+    if (ar == VK_ERROR_OUT_OF_DATE_KHR) { scDirty_ = true; return true; }
+    if (ar == VK_TIMEOUT || ar == VK_NOT_READY) return true;  // bỏ lượt, không phải lỗi
+    if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) return Fail("vkAcquireNextImageKHR", ar);
+    if (ar == VK_SUBOPTIMAL_KHR) scDirty_ = true;
+
     // 1) Compute
     VK_TRY(vkResetCommandBuffer(cmdWarp_, 0));
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -969,24 +977,8 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
         if (curCur_ != curPrev_) CmdRelease(cb, curCur_);
     }
     if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, qp_, 4);
-    VK_TRY(vkEndCommandBuffer(cb));
-    if (!SubmitAndWait(cb, fenceA_)) return false;
-    if (mode == 1) {
-        double ms[1] = {0};
-        if (ReadTimestamps(3, 2, ms)) stats_[2] = static_cast<float>(ms[0]);
-    }
 
-    // 2) Lấy ảnh swapchain (chặn theo vsync nhờ FIFO), blit, present
-    const auto t0 = Clock::now();
-    uint32_t idx = 0;
-    const VkResult ar = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, acquireSem_, VK_NULL_HANDLE, &idx);
-    if (ar == VK_ERROR_OUT_OF_DATE_KHR) { scDirty_ = true; return true; }
-    if (ar == VK_TIMEOUT || ar == VK_NOT_READY) return true;  // bỏ lượt, không phải lỗi
-    if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) return Fail("vkAcquireNextImageKHR", ar);
-    if (ar == VK_SUBOPTIMAL_KHR) scDirty_ = true;
 
-    VK_TRY(vkResetCommandBuffer(cmdBlit_, 0));
-    VK_TRY(vkBeginCommandBuffer(cmdBlit_, &bi));
     VkImage dst = scImages_[idx];
     VkImageMemoryBarrier toDst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     toDst.srcAccessMask = 0;
@@ -997,7 +989,7 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     toDst.image = dst;
     toDst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    vkCmdPipelineBarrier(cmdBlit_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &toDst);
 
     VkImageBlit region{};
@@ -1005,7 +997,7 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     region.srcOffsets[1] = {static_cast<int32_t>(out_.w), static_cast<int32_t>(out_.h), 1};
     region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
     region.dstOffsets[1] = {static_cast<int32_t>(scExtent_.width), static_cast<int32_t>(scExtent_.height), 1};
-    vkCmdBlitImage(cmdBlit_, out_.img, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+    vkCmdBlitImage(cb, out_.img, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                    1, &region, VK_FILTER_LINEAR);
 
     VkImageMemoryBarrier toPresent = toDst;
@@ -1013,9 +1005,9 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     toPresent.dstAccessMask = 0;
     toPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    vkCmdPipelineBarrier(cmdBlit_, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
                          0, 0, nullptr, 0, nullptr, 1, &toPresent);
-    VK_TRY(vkEndCommandBuffer(cmdBlit_));
+    VK_TRY(vkEndCommandBuffer(cb));
 
     const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
@@ -1023,10 +1015,10 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     si.pWaitSemaphores = &acquireSem_;
     si.pWaitDstStageMask = &waitStage;
     si.commandBufferCount = 1;
-    si.pCommandBuffers = &cmdBlit_;
+    si.pCommandBuffers = &cb;
     si.signalSemaphoreCount = 1;
     si.pSignalSemaphores = &renderDone_[idx];
-    VK_TRY(vkQueueSubmit(queue_, 1, &si, fenceB_));
+    VK_TRY(vkQueueSubmit(queue_, 1, &si, fenceA_));
 
     VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     pi.waitSemaphoreCount = 1;
@@ -1040,8 +1032,12 @@ bool Pipeline::OutPass(int mode, bool packFlow, bool acquire, bool release) {
     } else if (pr != VK_SUCCESS) {
         Fail("vkQueuePresentKHR", pr);
     }
-    VK_TRY(vkWaitForFences(dev_, 1, &fenceB_, VK_TRUE, UINT64_MAX));
-    VK_TRY(vkResetFences(dev_, 1, &fenceB_));
+    VK_TRY(vkWaitForFences(dev_, 1, &fenceA_, VK_TRUE, UINT64_MAX));
+    VK_TRY(vkResetFences(dev_, 1, &fenceA_));
+    if (mode == 1) {
+        double ms[1] = {0};
+        if (ReadTimestamps(3, 2, ms)) stats_[2] = static_cast<float>(ms[0]);
+    }
     presentWaitMs_ += MsSince(t0);
     return true;
 }
