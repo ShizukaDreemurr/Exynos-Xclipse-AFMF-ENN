@@ -17,6 +17,15 @@ layout(push_constant) uniform PC {
 
 float maxAbs(vec3 v) { return max(abs(v.x), max(abs(v.y), abs(v.z))); }
 
+// Điểm HUD = đứng yên giữa hai khung VÀ nằm trên biên rõ (chữ, viền nút, thanh máu).
+// Vùng phẳng đứng yên không cần bảo vệ (nội suy ra cũng bằng chính nó).
+bool hudEdge(vec2 q, vec2 px) {
+    vec3 c = texture(uCur, q).rgb;
+    if (maxAbs(texture(uPrev, q).rgb - c) >= pc.staticThr) return false;
+    float g = max(maxAbs(texture(uCur, q + vec2(px.x, 0.0)).rgb - c), maxAbs(texture(uCur, q + vec2(0.0, px.y)).rgb - c));
+    return g > 0.06;
+}
+
 void main() {
     ivec2 p = ivec2(gl_GlobalInvocationID.xy);
     if (p.x >= pc.outW || p.y >= pc.outH) return;
@@ -42,6 +51,17 @@ void main() {
     if (maxAbs(prev - cur) < pc.staticThr) {
         imageStore(outImg, p, vec4(cur, 1.0));
         return;
+    }
+
+    // Nở mặt nạ HUD ~3px: pixel nằm sát chữ/viền HUD giữ nguyên khung thật, flow nền không lem vào HUD.
+    {
+        vec2 px = 1.0 / vec2(float(pc.outW), float(pc.outH));
+        vec2 r = px * 3.0;
+        if (hudEdge(uv + vec2(r.x, 0.0), px) || hudEdge(uv - vec2(r.x, 0.0), px) ||
+            hudEdge(uv + vec2(0.0, r.y), px) || hudEdge(uv - vec2(0.0, r.y), px)) {
+            imageStore(outImg, p, vec4(cur, 1.0));
+            return;
+        }
     }
 
     // Flow theo khối 8px dễ bị "halo" ở biên vật thể: thử thêm flow của 4 khối lân cận
