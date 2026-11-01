@@ -19,6 +19,16 @@ android {
         buildConfigField("String", "BUILD_TAG", "\"v0.3.$run·$sha\"")
     }
 
+    // Khoá debug CỐ ĐỊNH (công khai, chỉ để ký bản cá nhân): mọi bản build cùng chữ ký => cài đè được.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
