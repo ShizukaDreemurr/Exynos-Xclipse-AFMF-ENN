@@ -54,7 +54,7 @@ class Governor {
             over = 0
             when {
                 tierIdx < tiers.lastIndex -> tierIdx++
-                !gpuOnly && i.npuAvailable -> gpuOnly = true
+                !gpuOnly && i.npuAvailable && i.prefBackend != FlowBackend.NPU -> gpuOnly = true
                 else -> {} // đã ở mức thấp nhất (GPU 360p): vẫn nội suy, không rơi về passthrough
             }
             cooldown = 60
@@ -75,7 +75,7 @@ class Governor {
 
         val nn = when (i.prefBackend) {
             FlowBackend.GPU -> false
-            FlowBackend.NPU -> i.npuAvailable && !forceGpu
+            FlowBackend.NPU -> i.npuAvailable && i.thermalStatus < 3  // người dùng ép NPU: không tự hạ xuống GPU vì tải
             else -> i.npuAvailable && !forceGpu
         }
         return Decision(if (nn) Mode.FLOW_NN else Mode.FLOW_GPU, tiers[idx])
