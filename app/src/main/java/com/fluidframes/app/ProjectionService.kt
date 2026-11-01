@@ -134,7 +134,7 @@ class ProjectionService : Service() {
             engine = ScreenCaptureEngine(
                 projection = projection,
                 ring = ring,
-                initialConfig = CaptureConfig.fromContext(this),
+                initialConfig = CaptureConfig.fromContext(this, SettingsStore(this).load().outLongSide),
                 onProjectionStopped = { stopSelf() },
             ).also { it.start() }
             if (!startRendering()) stopSelf()
@@ -151,7 +151,7 @@ class ProjectionService : Service() {
     /** Xoay màn hình -> kích thước VirtualDisplay phải đổi theo. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        engine?.reconfigure(CaptureConfig.fromContext(this))
+        engine?.reconfigure(CaptureConfig.fromContext(this, SettingsStore(this).load().outLongSide))
     }
 
     override fun onDestroy() {

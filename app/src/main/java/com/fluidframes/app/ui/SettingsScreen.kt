@@ -85,6 +85,18 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
             }
 
             FFCard {
+                SectionTitle("Độ phân giải hình xuất")
+                val outOpts = listOf(0, 1920, 1560, 1280)
+                Segmented(listOf("Gốc", "1920", "1560", "1280"), outOpts.indexOf(settings.outLongSide).coerceAtLeast(0)) {
+                    onChange(settings.copy(outLongSide = outOpts[it]))
+                }
+                Spacer(Modifier.height(10.dp))
+                Text("Cạnh dài của hình app vẽ ra (Gốc = đúng độ phân giải màn hình, nét nhất). Flow tính ở “Độ phân giải xử lý”, " +
+                    "còn khung nội suy lấy chi tiết từ ảnh độ phân giải này nên Gốc cho hình nét như game. Thấp hơn = nhẹ GPU hơn nhưng mờ. " +
+                    "Cần bấm Dừng rồi Bắt đầu lại để áp dụng.",
+                    style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
+            }
+            FFCard {
                 SectionTitle("Tần số quét mục tiêu")
                 val hzOpts = listOf(0, 60, 90, 120)
                 Segmented(listOf("Cao nhất", "60 Hz", "90 Hz", "120 Hz"), hzOpts.indexOf(settings.targetHz).coerceAtLeast(0)) {

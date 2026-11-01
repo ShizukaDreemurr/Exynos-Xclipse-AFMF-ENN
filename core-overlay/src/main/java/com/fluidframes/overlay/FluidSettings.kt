@@ -13,6 +13,8 @@ data class FluidSettings(
     val secureOverlay: Boolean = false,
     /** Tần số quét mục tiêu (Hz). 0 = cao nhất máy hỗ trợ. */
     val targetHz: Int = 0,
+    /** Cạnh dài của hình xuất/chụp (px). 0 = gốc màn hình. Áp dụng khi bấm Bắt đầu lại. */
+    val outLongSide: Int = 0,
 )
 
 class SettingsStore(context: Context) {
@@ -25,6 +27,7 @@ class SettingsStore(context: Context) {
         showHud = prefs.getBoolean("hud", true),
         secureOverlay = prefs.getBoolean("secure", false),
         targetHz = prefs.getInt("hz", 0),
+        outLongSide = prefs.getInt("outres", 0),
     )
 
     fun save(s: FluidSettings) {
@@ -35,6 +38,7 @@ class SettingsStore(context: Context) {
             .putBoolean("hud", s.showHud)
             .putBoolean("secure", s.secureOverlay)
             .putInt("hz", s.targetHz)
+            .putInt("outres", s.outLongSide)
             .apply()
     }
 
