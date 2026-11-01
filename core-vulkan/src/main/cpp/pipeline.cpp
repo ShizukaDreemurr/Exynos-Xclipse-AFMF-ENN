@@ -824,7 +824,7 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
     pc_.flowScaleX = 1.0f / static_cast<float>(procW_);
     pc_.flowScaleY = 1.0f / static_cast<float>(procH_);
     pc_.staticThr = 0.02f;
-    pc_.occThr = 0.30f;
+    pc_.occThr = 0.14f;
 
     VkCommandBuffer cb = cmdPre_;
     if (vkResetCommandBuffer(cb, 0) != VK_SUCCESS) { FailMsg("reset cmdPre"); return kBeginError; }

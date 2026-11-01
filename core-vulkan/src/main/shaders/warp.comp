@@ -39,12 +39,10 @@ void main() {
     vec3 b = texture(uCur, uv + fl.zw).rgb;    // cur warp về thời điểm t
     float mask = (pc.useNN != 0) ? texture(uAux, uv).r : 0.5;  // trọng số phía prev
 
-    vec3 outc;
-    if (maxAbs(a - b) > pc.occThr) {
-        // Occlusion / flow không đáng tin: trộn không warp
-        outc = mix(prev, cur, pc.t);
-    } else {
-        outc = mix(b, a, mask);
-    }
+    // Độ lệch giữa hai phía warp = độ tin cậy flow. Càng lệch càng lùi về frame thật (sạch, không ghost/nhiễu).
+    vec3 warped = mix(b, a, mask);
+    float err = maxAbs(a - b);
+    float w = smoothstep(pc.occThr * 0.4, pc.occThr, err);
+    vec3 outc = mix(warped, cur, w);
     imageStore(outImg, p, vec4(outc, 1.0));
 }

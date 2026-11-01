@@ -46,8 +46,8 @@ class Governor {
 
         if (cooldown > 0) cooldown--
         val budgetMs = 0.5f * 1000f / i.srcFps.coerceIn(10f, 60f)
-        val overBudget = i.workMs > budgetMs || i.dropRate > 0.05f
-        val underBudget = i.workMs < 0.6f * budgetMs && i.dropRate < 0.01f
+        val overBudget = i.workMs > budgetMs
+        val underBudget = i.workMs < 0.6f * budgetMs
         if (overBudget) { over++; under = 0 } else if (underBudget) { under++; over = 0 } else { over = 0; under = 0 }
 
         if (over >= 20 && cooldown == 0) {

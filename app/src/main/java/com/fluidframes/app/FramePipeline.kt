@@ -196,7 +196,8 @@ class FramePipeline(
         val gapOk = dtMs in 3.0..120.0
 
         // npuAvailable chỉ true khi đã nạp được (hoặc chưa thử và có backend).
-        val npuCandidate = st.backend != FlowBackend.GPU && st.backend != FlowBackend.OFF && !backendFailed
+        // Model NN hiện chỉ có trọng số ngẫu nhiên => flow rác. Chỉ bật khi có model đã huấn luyện.
+        val npuCandidate = NN_FLOW_TRAINED && st.backend != FlowBackend.GPU && st.backend != FlowBackend.OFF && !backendFailed
         val d = governor.decide(
             Governor.Input(
                 enabled = st.enabled,
@@ -278,5 +279,6 @@ class FramePipeline(
     private companion object {
         const val TAG = "FramePipeline"
         const val HIDE_AFTER_FRAMES = 20
+        const val NN_FLOW_TRAINED = false
     }
 }
