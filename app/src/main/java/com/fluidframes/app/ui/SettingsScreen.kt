@@ -21,11 +21,11 @@ import com.fluidframes.telemetry.FlowBackend
 import com.fluidframes.telemetry.ProcTier
 
 private val tiers = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360)
-private val tierLabels = listOf("Tự động", "720p", "540p", "360p")
+private val tierLabels = listOf("Mặc định", "720p", "540p", "360p")
 private val backends = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
 private val backendLabels = listOf("Tự động", "NPU", "GPU", "Tắt")
 private val backendDesc = mapOf(
-    FlowBackend.AUTO to "Hệ thống tự chọn: NPU nếu chạy được, không thì GPU.",
+    FlowBackend.AUTO to "NPU nếu nạp được, nếu không thì GPU. Giữ nguyên lựa chọn, không tự đổi theo tải.",
     FlowBackend.NPU to "Ép dùng NPU Exynos (model AI). Cần model đã huấn luyện để hình đẹp.",
     FlowBackend.GPU to "Block-matching trên GPU Vulkan. Ổn định, không cần model.",
     FlowBackend.OFF to "Tắt nội suy: chỉ chuyển tiếp khung hình gốc.",
@@ -34,7 +34,7 @@ private val backendDesc = mapOf(
 private data class Preset(val name: String, val desc: String, val tier: ProcTier, val backend: FlowBackend)
 
 private val presets = listOf(
-    Preset("Cân bằng", "Tự động theo nhiệt và tải", ProcTier.AUTO, FlowBackend.AUTO),
+    Preset("Cân bằng", "540p, NPU nếu có (không tự đổi giữa chừng)", ProcTier.AUTO, FlowBackend.AUTO),
     Preset("Chất lượng", "720p, ưu tiên NPU", ProcTier.P720, FlowBackend.NPU),
     Preset("Tiết kiệm", "360p, GPU, mát máy", ProcTier.P360, FlowBackend.GPU),
 )
@@ -84,7 +84,7 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
                     onChange(settings.copy(tier = tiers[it]))
                 }
                 Spacer(Modifier.height(10.dp))
-                Text("Thấp hơn = nhanh và mát hơn nhưng chuyển động kém mịn. “Tự động” hạ bậc khi máy nóng.",
+                Text("Thấp hơn = nhanh và mát hơn nhưng chuyển động kém mịn. Không còn tự hạ bậc: app giữ đúng mức bạn chọn (chỉ tự dừng khi máy quá nóng mức nguy hiểm).",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
             }
 

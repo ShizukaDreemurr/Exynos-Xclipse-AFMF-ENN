@@ -136,7 +136,7 @@ class MenuOverlay(
             settings = settings.copy(onlyEnabledApps = it); onChange(settings)
         })
         col.addView(ui.caption("Model flow / độ phân giải xử lý (360p=640, 540p=960, 720p=1280)"))
-        col.addView(ui.segmented(listOf("Tự động", "720p", "540p", "360p"), tierIndex(settings.tier)) {
+        col.addView(ui.segmented(listOf("Mặc định", "720p", "540p", "360p"), tierIndex(settings.tier)) {
             settings = settings.copy(tier = TIERS[it]); onChange(settings)
         })
         col.addView(ui.caption("Công cụ tính flow"))
