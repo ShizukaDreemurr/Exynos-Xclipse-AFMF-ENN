@@ -44,15 +44,41 @@ void main() {
         return;
     }
 
-    vec4 fl = texture(uFlow, uv);
-    vec3 a = texture(uPrev, uv + fl.xy).rgb;   // prev warp về thời điểm t
-    vec3 b = texture(uCur, uv + fl.zw).rgb;    // cur warp về thời điểm t
-    float mask = (pc.useNN != 0) ? texture(uAux, uv).r : 0.5;  // trọng số phía prev
-
-    // Độ lệch giữa hai phía warp = độ tin cậy flow. Càng lệch càng lùi về frame thật (sạch, không ghost/nhiễu).
-    vec3 warped = mix(b, a, mask);
+    // Flow theo khối 8px dễ bị "halo" ở biên vật thể: thử thêm flow của 4 khối lân cận
+    // và chọn ứng viên cho hai phía warp khớp nhau nhất (lỗi nhỏ nhất).
+    vec2 off = vec2(4.0 / float(pc.flowW), 4.0 / float(pc.flowH));
+    vec4 cand[5];
+    cand[0] = texture(uFlow, uv);
+    cand[1] = texture(uFlow, uv + vec2(off.x, 0.0));
+    cand[2] = texture(uFlow, uv - vec2(off.x, 0.0));
+    cand[3] = texture(uFlow, uv + vec2(0.0, off.y));
+    cand[4] = texture(uFlow, uv - vec2(0.0, off.y));
+    vec4 fl = cand[0];
+    vec3 a = texture(uPrev, uv + fl.xy).rgb;
+    vec3 b = texture(uCur, uv + fl.zw).rgb;
     float err = maxAbs(a - b);
-    float w = smoothstep(pc.occThr * 0.4, pc.occThr, err);
+    for (int i = 1; i < 5; ++i) {
+        vec3 ai = texture(uPrev, uv + cand[i].xy).rgb;
+        vec3 bi = texture(uCur, uv + cand[i].zw).rgb;
+        float ei = maxAbs(ai - bi);
+        if (ei < err - 0.01) { err = ei; fl = cand[i]; a = ai; b = bi; }
+    }
+
+    // Chống "bóng ma" HUD: nếu điểm lấy mẫu rơi vào vùng tĩnh (HUD/nút) mà pixel này không tĩnh
+    // thì phía đó đang kéo HUD vào nền chuyển động -> bỏ phía đó, dùng phía còn lại / khung thật.
+    float thr = pc.staticThr * 2.0;
+    vec2 qa = uv + fl.xy, qb = uv + fl.zw;
+    bool aHud = maxAbs(texture(uPrev, qa).rgb - texture(uCur, qa).rgb) < thr && length(fl.xy) > 0.0015;
+    bool bHud = maxAbs(texture(uPrev, qb).rgb - texture(uCur, qb).rgb) < thr && length(fl.zw) > 0.0015;
+    if (aHud && bHud) { imageStore(outImg, p, vec4(cur, 1.0)); return; }
+    float mask = (pc.useNN != 0) ? texture(uAux, uv).r : 0.5;  // trọng số phía prev
+    if (aHud) { mask = 0.0; err = 0.0; }
+    else if (bHud) { mask = 1.0; err = 0.0; }
+
+    // Che khuất: khi hai phía lệch nhau (độ tin cậy thấp), lùi mềm về khung thật; vùng hơi lệch
+    // thì nghiêng về phía có biên rõ hơn thay vì trộn đều (đỡ mờ/bóng ma).
+    vec3 warped = mix(b, a, mask);
+    float w = smoothstep(pc.occThr * 0.5, pc.occThr * 1.2, err);
     vec3 outc = mix(warped, cur, w);
     imageStore(outImg, p, vec4(outc, 1.0));
 }
