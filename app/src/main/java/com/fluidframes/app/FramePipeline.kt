@@ -498,7 +498,8 @@ class FramePipeline(
                 stats.presentMs.add(ns.presentMs)
                 stats.captureMs.add(((t0 - cur.arrivedNs) / 1e6f).coerceAtLeast(0f))
                 val procMs = (System.nanoTime() - t0) / 1e6f
-                stats.workMs.add(procMs + ns.preMs + ns.blockMs + ns.warpMs)
+                // Không tính thời gian chờ vsync/swapchain (không phải tải thật) -> governor khỏi tụt tier oan.
+                stats.workMs.add((procMs - ns.presentMs).coerceAtLeast(0f) + ns.preMs + ns.blockMs + ns.warpMs)
                 procEma.add(procMs)
                 lastMode = d.mode
                 lastError = ""
