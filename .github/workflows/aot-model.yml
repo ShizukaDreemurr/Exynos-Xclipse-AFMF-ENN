@@ -2,7 +2,7 @@ name: aot-compile-model
 on:
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py', 'models/ifrnet_coarse.py', 'models/weights/**']
+    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py', 'models/ifrnet_coarse.py', 'models/op_probes.py', 'models/weights/**']
 permissions:
   contents: write
 jobs:
@@ -33,11 +33,18 @@ jobs:
           echo "::notice title=aotlog::$(tail -c 800 /tmp/aot.log | tr '\n' ' ')"
           find out_models -name '*.tflite' | xargs ls -l | awk '{print $5" "$9}' | tr '\n' ';' > /tmp/files.txt
           echo "::notice title=files::$(cat /tmp/files.txt)"
+      - name: Op probes (gather/warp có chạy trên NPU không)
+        working-directory: models
+        continue-on-error: true
+        run: |
+          LD_PRELOAD=$SHIM python op_probes.py > /tmp/ops.log 2>&1 || true
+          echo "::notice title=opprobe::$(tr "\r" "\n" < /tmp/ops.log | grep OPRESULT | cut -c1-420 | tr '\n' '|')"
       - name: Publish compiled models
         if: success()
         run: |
           mkdir -p /tmp/pm/models && cd models
           for n in 640 960 1280 probe_nchw probe_nhwc; do f=$(find out_models/c$n -name '*Samsung*' -name '*.tflite' | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
+          for n in op_resize op_gather op_gather_warp op_gather_nd op_shift25; do f=$(find out_ops/c_${n}_1 out_ops/c_${n}_0 -name '*Samsung*' -name '*.tflite' 2>/dev/null | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
           ls -l /tmp/pm/models
           cd /tmp/pm && git init -q && git checkout -q -b prebuilt-models
           git config user.name ci; git config user.email ci@example.com

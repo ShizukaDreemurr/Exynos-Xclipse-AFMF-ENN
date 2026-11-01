@@ -81,7 +81,7 @@ object NpuDiagnostics {
         rows += Row("Heap DMA-BUF", Level.INFO, heapInfo)
 
         // 5b. Chạy thử model siêu nhỏ (tách lỗi model hay lỗi cách chạy)
-        for (probe in listOf("probe_nchw", "probe_nhwc")) {
+        for (probe in listOf("probe_nchw", "probe_nhwc", "op_resize", "op_gather", "op_gather_warp", "op_gather_nd", "op_shift25")) {
             val has = try { context.assets.open("models/flow_$probe.tflite").close(); true } catch (_: Throwable) { false }
             if (!has) { rows += Row("Chạy thử $probe", Level.INFO, "chưa có model"); continue }
             for (st in NpuEnv.strategies.take(3)) {
