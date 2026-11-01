@@ -117,7 +117,7 @@ object NpuDiagnostics {
         if (!works) rows += Row("Kết luận", Level.WARN,
             "NPU chưa chạy được model. Ứng dụng sẽ dùng GPU (block-matching) cho tới khi có cách nạp thành công.")
         else if (!runs) rows += Row("Kết luận", Level.WARN, "NPU nạp được model nhưng chạy thì lỗi (kể cả model 1 lớp) — lỗi ở đường chạy/bộ nhớ, không phải model.")
-        else rows += Row("Kết luận", Level.OK, "NPU Exynos chạy được model. Lưu ý: model hiện dùng trọng số ngẫu nhiên.")
+        else rows += Row("Kết luận", Level.OK, "NPU Exynos chạy được model IFRNet-S (đã huấn luyện).")
         return Report(rows, ms640, works)
     }
 }

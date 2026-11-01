@@ -87,8 +87,8 @@ fun NpuScreen(
             }
             FFCard {
                 SectionTitle("Về NPU trong app")
-                Text("Model flow hiện dùng trọng số ngẫu nhiên: NPU chạy để đo tốc độ, nhưng hình nội suy chỉ đẹp hơn " +
-                    "khi có model đã huấn luyện. Khi NPU chưa chạy được, app tự dùng GPU.",
+                Text("Model flow là IFRNet-S đã huấn luyện (MIT), chạy trên NPU Exynos để ước lượng chuyển động; " +
+                    "GPU ghép khung. Khi NPU không chạy được, app tự dùng GPU.",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
             }
             Spacer(Modifier.height(8.dp))
