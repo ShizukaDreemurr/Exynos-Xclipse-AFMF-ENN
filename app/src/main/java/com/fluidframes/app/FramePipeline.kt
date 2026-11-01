@@ -137,6 +137,21 @@ class FramePipeline(
         }
     }
 
+    private var vsyncCached = 16.6f
+    private var vsyncAtNs = 0L
+    private fun vsyncMs(): Float {
+        val now = System.nanoTime()
+        if (now - vsyncAtNs > 1_000_000_000L) {
+            vsyncAtNs = now
+            try {
+                val hz = context.getSystemService(android.hardware.display.DisplayManager::class.java)
+                    .getDisplay(android.view.Display.DEFAULT_DISPLAY).refreshRate
+                if (hz in 24f..240f) vsyncCached = 1000f / hz
+            } catch (_: Throwable) {}
+        }
+        return vsyncCached
+    }
+
     private fun setOverlay(visible: Boolean) {
         if (overlayShown != visible) {
             overlayShown = visible
@@ -212,6 +227,10 @@ class FramePipeline(
         )
         lastTier = d.tier
         if (d.mode == Mode.PASSTHROUGH) { passthrough(cur); return }
+        // Màn hình chỉ hiển thị tối đa `refresh` khung/s. Nếu nửa chu kỳ nguồn ngắn hơn 1 vsync thì
+        // khung nội suy không còn chỗ để hiện: ta sẽ present 2 lần/khung, chặn theo vsync, làm cả
+        // pipeline (và fps ta đo được) tụt về ~1/2. Khi đó để game hiển thị trực tiếp.
+        if (dtMs / 2.0 < 0.95 * vsyncMs()) { passthrough(cur); return }
         if (!gapOk) {
             stats.framesSkipped.incrementAndGet()
             passthrough(cur)
