@@ -1078,15 +1078,15 @@ int64_t Pipeline::GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur) {
     const VkSemaphore waits[2] = {F.acqA, F.acqB};
     const VkPipelineStageFlags ws[2] = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
     const VkSemaphore sigs[2] = {renderDone_[idxA], renderDone_[idxB]};
-    VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-    si.waitSemaphoreCount = 2;
-    si.pWaitSemaphores = waits;
-    si.pWaitDstStageMask = ws;
-    si.commandBufferCount = 1;
-    si.pCommandBuffers = &cb;
-    si.signalSemaphoreCount = 2;
-    si.pSignalSemaphores = sigs;
-    if (vkQueueSubmit(queue_, 1, &si, F.fence) != VK_SUCCESS) { FailMsg("submit async"); scDirty_ = true; return -1; }
+    VkSubmitInfo subi{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    subi.waitSemaphoreCount = 2;
+    subi.pWaitSemaphores = waits;
+    subi.pWaitDstStageMask = ws;
+    subi.commandBufferCount = 1;
+    subi.pCommandBuffers = &cb;
+    subi.signalSemaphoreCount = 2;
+    subi.pSignalSemaphores = sigs;
+    if (vkQueueSubmit(queue_, 1, &subi, F.fence) != VK_SUCCESS) { FailMsg("submit async"); scDirty_ = true; return -1; }
     F.inflight = true;
     F.seq = ++submitSeq_;
     afNext_ = (si + 1) % kAsync;
