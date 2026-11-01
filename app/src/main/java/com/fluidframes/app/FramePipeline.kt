@@ -78,22 +78,23 @@ class FramePipeline(
         backend = null
     }
 
-    fun hudText(): String {
+    fun hudText(mask: Int = -1): String {
         val s = stats
         val out = s.outFps.fps()
-        return buildString {
-            append("Xclipse ENN-SS %s\n".format(BuildConfig.BUILD_TAG))
-            append("src %.0f → out %.0f fps  [%s %s]\n".format(s.srcFps.fps(), out, lastMode, tierLabel(lastTier)))
-            append("màn: %.0f Hz (tối đa %.0f)\n".format(curHz(), 1000f / vsyncMs()))
-            append("NN: %s | host: %s | overlay: %s\n".format(backendLabel, hostLabel, if (overlayShown) "on" else "off"))
-            append("pre %.1f | flow %.1f | warp %.1f | pres %.1f ms\n".format(
-                s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value))
-            append("chờ frame %.1f | process %.1f | gpuAsync %.1f ms\n".format(idleEma.value, loopProcEma.value, asyncCallEma.value))
-            append("work %.1f ms | drop %.1f%% | skip %d | therm %d".format(
-                s.workMs.value, s.dropRate() * 100f, s.framesSkipped.get(), thermal.status))
-            append("\n").append(captureInfo()).append(" stalls=").append(stalls)
-            if (lastError.isNotEmpty()) append("\n! ").append(lastError)
-        }
+        fun on(bit: Int) = mask and bit != 0
+        val lines = ArrayList<String>()
+        if (on(1)) lines += "Xclipse ENN-SS %s".format(BuildConfig.BUILD_TAG)
+        if (on(2)) lines += "src %.0f → out %.0f fps  [%s %s]".format(s.srcFps.fps(), out, lastMode, tierLabel(lastTier))
+        if (on(4)) lines += "màn: %.0f Hz (tối đa %.0f)".format(curHz(), 1000f / vsyncMs())
+        if (on(8)) lines += "NN: %s | host: %s | overlay: %s".format(backendLabel, hostLabel, if (overlayShown) "on" else "off")
+        if (on(16)) lines += "pre %.1f | flow %.1f | warp %.1f | pres %.1f ms".format(
+            s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value)
+        if (on(32)) lines += "chờ frame %.1f | process %.1f | gpuAsync %.1f ms".format(idleEma.value, loopProcEma.value, asyncCallEma.value)
+        if (on(64)) lines += "work %.1f ms | drop %.1f%% | skip %d | therm %d".format(
+            s.workMs.value, s.dropRate() * 100f, s.framesSkipped.get(), thermal.status)
+        if (on(128)) lines += captureInfo() + " stalls=" + stalls
+        if (on(512) && lastError.isNotEmpty()) lines += "! $lastError"
+        return lines.joinToString("\n")
     }
 
     /** Số liệu cho trình đo đạc (mỗi giây một lần). */

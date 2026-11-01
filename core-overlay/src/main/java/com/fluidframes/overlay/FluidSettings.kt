@@ -24,7 +24,30 @@ data class FluidSettings(
     /** Chỉ nội suy app đã bật trong menu (app lạ/launcher/hệ thống chạy trực tiếp, không tốn tài nguyên). */
     val onlyEnabledApps: Boolean = true,
     val enabledApps: Set<String> = emptySet(),
+    /** Dòng HUD hiển thị (bitmask, xem HudLines). */
+    val hudLines: Int = HudLines.ALL,
+    /** Cỡ chữ HUD (%). */
+    val hudScale: Int = 100,
+    /** Độ đậm nền HUD (%). */
+    val hudAlpha: Int = 67,
+    /** 0 góc trái | 1 giữa trên | 2 phải trên. */
+    val hudAnchor: Int = 0,
 )
+
+/** Các dòng của HUD số liệu; mỗi dòng bật/tắt riêng trong menu overlay. */
+object HudLines {
+    const val VERSION = 1
+    const val FPS = 2
+    const val HZ = 4
+    const val BACKEND = 8
+    const val STAGES = 16
+    const val LOOP = 32
+    const val WORK = 64
+    const val CAPTURE = 128
+    const val POWER = 256
+    const val ERROR = 512
+    const val ALL = 1023 and CAPTURE.inv() and LOOP.inv()   // mặc định gọn: bỏ dòng kỹ thuật (chờ/process và capture)
+}
 
 class SettingsStore(context: Context) {
     private val prefs = context.getSharedPreferences("fluidframes", Context.MODE_PRIVATE)
@@ -42,6 +65,10 @@ class SettingsStore(context: Context) {
         hudProtect = prefs.getBoolean("hudprot", true),
         onlyEnabledApps = prefs.getBoolean("onlyapps", true),
         enabledApps = prefs.getStringSet("apps_on", emptySet())?.toSet() ?: emptySet(),
+        hudLines = prefs.getInt("hud_lines", HudLines.ALL),
+        hudScale = prefs.getInt("hud_scale", 100),
+        hudAlpha = prefs.getInt("hud_alpha", 67),
+        hudAnchor = prefs.getInt("hud_anchor", 0),
     )
 
     fun save(s: FluidSettings) {
@@ -58,6 +85,10 @@ class SettingsStore(context: Context) {
             .putBoolean("hudprot", s.hudProtect)
             .putBoolean("onlyapps", s.onlyEnabledApps)
             .putStringSet("apps_on", s.enabledApps)
+            .putInt("hud_lines", s.hudLines)
+            .putInt("hud_scale", s.hudScale)
+            .putInt("hud_alpha", s.hudAlpha)
+            .putInt("hud_anchor", s.hudAnchor)
             .apply()
     }
 

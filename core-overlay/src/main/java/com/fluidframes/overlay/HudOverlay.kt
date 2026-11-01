@@ -15,6 +15,8 @@ import android.widget.TextView
 class HudOverlay(private val host: OverlayHost) {
     private val main = Handler(Looper.getMainLooper())
     private var tv: TextView? = null
+    private var lp: WindowManager.LayoutParams? = null
+    private var lastStyle = Triple(100, 67, 0)
 
     fun show() {
         if (tv != null) return
@@ -44,8 +46,25 @@ class HudOverlay(private val host: OverlayHost) {
         try {
             host.windowManager.addView(t, lp)
             tv = t
+            this.lp = lp
+            style(lastStyle.first, lastStyle.second, lastStyle.third)
         } catch (e: Exception) {
             Log.e("HudOverlay", "addView thất bại", e)
+        }
+    }
+
+    /** Cỡ chữ (%), độ đậm nền (%), vị trí neo (0 trái | 1 giữa | 2 phải). Áp dụng ngay. */
+    fun style(scalePct: Int, alphaPct: Int, anchor: Int) {
+        lastStyle = Triple(scalePct, alphaPct, anchor)
+        main.post {
+            val t = tv ?: return@post
+            val dp = host.context.resources.displayMetrics.density
+            t.textSize = 10f * scalePct / 100f
+            t.background = OS.rounded((((alphaPct.coerceIn(0, 100) * 255) / 100) shl 24) or 0x0A0C12, 10 * dp)
+            val l = lp ?: return@post
+            l.gravity = Gravity.TOP or when (anchor) { 1 -> Gravity.CENTER_HORIZONTAL; 2 -> Gravity.END; else -> Gravity.START }
+            l.x = if (anchor == 1) 0 else (4 * dp).toInt()
+            runCatching { host.windowManager.updateViewLayout(t, l) }
         }
     }
 

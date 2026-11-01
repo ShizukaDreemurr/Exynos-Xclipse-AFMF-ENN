@@ -160,6 +160,24 @@ class MenuOverlay(
         col.addView(ui.toggleRow("HUD số liệu", { settings.showHud }) {
             settings = settings.copy(showHud = it); onChange(settings)
         })
+        col.addView(ui.caption("Tùy chỉnh HUD — dòng hiển thị"))
+        for ((bit, name) in HUD_ROWS) {
+            col.addView(ui.toggleRow(name, { settings.hudLines and bit != 0 }) {
+                settings = settings.copy(hudLines = if (it) settings.hudLines or bit else settings.hudLines and bit.inv()); onChange(settings)
+            })
+        }
+        col.addView(ui.caption("Cỡ chữ HUD"))
+        col.addView(ui.segmented(listOf("Nhỏ", "Vừa", "Lớn", "Rất lớn"), HUD_SCALES.indexOf(settings.hudScale).coerceAtLeast(1)) {
+            settings = settings.copy(hudScale = HUD_SCALES[it]); onChange(settings)
+        })
+        col.addView(ui.caption("Độ đậm nền HUD"))
+        col.addView(ui.segmented(listOf("Trong", "Mờ", "Vừa", "Đậm"), HUD_ALPHAS.indexOf(settings.hudAlpha).coerceAtLeast(2)) {
+            settings = settings.copy(hudAlpha = HUD_ALPHAS[it]); onChange(settings)
+        })
+        col.addView(ui.caption("Vị trí HUD"))
+        col.addView(ui.segmented(listOf("Trái trên", "Giữa trên", "Phải trên"), settings.hudAnchor.coerceIn(0, 2)) {
+            settings = settings.copy(hudAnchor = it); onChange(settings)
+        })
         col.addView(ui.toggleRow("Overlay secure (thử nghiệm)", { settings.secureOverlay }) {
             settings = settings.copy(secureOverlay = it); onChange(settings)
         })
@@ -215,6 +233,20 @@ class MenuOverlay(
     private companion object {
         const val TAG = "MenuOverlay"
         val HZS = listOf(0, 60, 90, 120)
+        val HUD_SCALES = listOf(70, 100, 140, 190)
+        val HUD_ALPHAS = listOf(0, 35, 67, 90)
+        val HUD_ROWS = listOf(
+            HudLines.VERSION to "Dòng: phiên bản",
+            HudLines.FPS to "Dòng: FPS nguồn → xuất, chế độ",
+            HudLines.HZ to "Dòng: tần số quét màn",
+            HudLines.BACKEND to "Dòng: NPU/GPU, host, overlay",
+            HudLines.STAGES to "Dòng: pre / flow / warp / present (ms)",
+            HudLines.LOOP to "Dòng: chờ frame / process / gpuAsync",
+            HudLines.WORK to "Dòng: work, drop, skip, nhiệt",
+            HudLines.CAPTURE to "Dòng: capture, stalls",
+            HudLines.POWER to "Dòng: pin %, nhiệt pin, công suất (W)",
+            HudLines.ERROR to "Dòng: lỗi (nếu có)",
+        )
         val TIERS = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360)
         val BACKENDS = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
     }

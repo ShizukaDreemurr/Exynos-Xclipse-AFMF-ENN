@@ -32,6 +32,7 @@ class OverlayManager(
         video.show(settings.secureOverlay)
         hud.show()
         hud.setVisible(settings.showHud)
+        hud.style(settings.hudScale, settings.hudAlpha, settings.hudAnchor)
         menu.show()
     }
 
@@ -49,6 +50,8 @@ class OverlayManager(
         val old = settings
         settings = new
         hud.setVisible(new.showHud)
+        if (old.hudScale != new.hudScale || old.hudAlpha != new.hudAlpha || old.hudAnchor != new.hudAnchor)
+            hud.style(new.hudScale, new.hudAlpha, new.hudAnchor)
         if (old.targetHz != new.targetHz) SettingsStore(host.context).save(new)
         if (old.secureOverlay != new.secureOverlay || old.targetHz != new.targetHz) {
             // FLAG_SECURE đặt lúc tạo cửa sổ: dựng lại cửa sổ video (menu/HUD vẫn nằm trên).

@@ -49,12 +49,35 @@ class ProjectionService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val hudTick = object : Runnable {
         override fun run() {
-            pipeline?.let { overlay?.setHudText(it.hudText()); live.value = it.live() }
+            pipeline?.let {
+                val st = overlay?.settings
+                val mask = st?.hudLines ?: -1
+                var txt = it.hudText(mask)
+                if (mask and com.fluidframes.overlay.HudLines.POWER != 0) {
+                    val pw = powerLine()
+                    if (pw.isNotEmpty()) txt = if (txt.isEmpty()) pw else txt + "\n" + pw
+                }
+                overlay?.setHudText(txt); live.value = it.live()
+            }
             main.postDelayed(this, 500)
         }
     }
 
     /** Tạo overlay + pipeline. Gọi sau khi capture đã chạy. false = không dựng được. */
+    /** Pin %, nhiệt pin, công suất tức thời (W) từ BatteryManager. */
+    private fun powerLine(): String = try {
+        val b = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val lvl = b?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val tmp = (b?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
+        val mv = b?.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+        val bm = getSystemService(android.os.BatteryManager::class.java)
+        val ua = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        // Đơn vị dòng điện khác nhau theo máy (µA hay mA): giá trị > 20000 coi là µA.
+        val ma = if (kotlin.math.abs(ua) > 20000) ua / 1000f else ua.toFloat()
+        val w = kotlin.math.abs(ma) * mv / 1_000_000f
+        "pin %d%% | %.1f°C | %.0f mA | %.2f W".format(lvl, tmp, ma, w)
+    } catch (_: Throwable) { "" }
+
     private fun startRendering(): Boolean {
         val np = NativePipeline.create(this).getOrElse {
             Log.e(TAG, "Vulkan init lỗi", it)
