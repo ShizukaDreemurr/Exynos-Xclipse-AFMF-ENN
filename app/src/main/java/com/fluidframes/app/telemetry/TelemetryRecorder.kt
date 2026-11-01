@@ -97,6 +97,15 @@ object TelemetryRecorder {
     }
 
     /** Gọi từ dịch vụ Trợ năng mỗi khi cửa sổ đổi: biết app nào đang ở trước. */
+    /** App thật đang ở trước (đã loại hệ thống, bàn phím, panel Game Booster, chụp màn hình...). */
+    fun foreground(): String = lastFg
+
+    private val ignoredFg = setOf(
+        "com.android.systemui", "com.samsung.android.game.gametools", "com.samsung.android.app.smartcapture",
+        "com.samsung.android.sidegesturepad", "com.samsung.android.app.cocktailbarservice",
+        "com.samsung.android.game.gamehome", "com.samsung.android.app.taskedge",
+    )
+
     fun attach(context: Context) { if (ownPkg.isEmpty()) ownPkg = context.packageName }
 
     @Volatile private var lastFg = ""
@@ -114,7 +123,7 @@ object TelemetryRecorder {
     }
 
     fun onForeground(pkg: String) {
-        if (ownPkg.isNotEmpty() && pkg != ownPkg && pkg != "com.android.systemui" &&
+        if (ownPkg.isNotEmpty() && pkg != ownPkg && pkg !in ignoredFg &&
             !pkg.contains("inputmethod") && !pkg.contains("keyboard")) lastFg = pkg
         if (!isRecording) return
         if (pkg == app.packageName || pkg == "com.android.systemui" ||

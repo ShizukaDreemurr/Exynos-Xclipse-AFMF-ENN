@@ -105,6 +105,7 @@ class ProjectionService : Service() {
                 } else "Chưa biết app nào đang chạy: bật Trợ năng rồi chuyển vào game một lần."
             },
             isRecording = { com.fluidframes.app.telemetry.TelemetryRecorder.isRecording },
+            foreground = { com.fluidframes.app.telemetry.TelemetryRecorder.foreground() },
         ).also { it.show() }
         fp.start()
         running.value = true

@@ -412,6 +412,11 @@ class FramePipeline(
     private fun process(prev: FrameSlot?, cur: FrameSlot) {
         val st = settings()
         applyTune(st)
+        // Chỉ nội suy app đã bật. Chưa nhận ra app (chưa bật Trợ năng) thì cứ nội suy như cũ.
+        if (st.onlyEnabledApps) {
+            val fg = com.fluidframes.app.telemetry.TelemetryRecorder.foreground()
+            if (fg.isNotEmpty() && fg !in st.enabledApps) { passthrough(cur); return }
+        }
         if (prev == null) {
             passthrough(cur)
             return

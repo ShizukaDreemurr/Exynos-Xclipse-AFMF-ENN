@@ -27,6 +27,7 @@ class MenuOverlay(
     private val onStop: () -> Unit,
     private val onRecordToggle: () -> String,
     private val isRecording: () -> Boolean,
+    private val foreground: () -> String,
 ) {
     private var settings = initial
     private val dp = host.context.resources.displayMetrics.density
@@ -116,8 +117,23 @@ class MenuOverlay(
             background = OS.rounded(OS.BG, 28 * dp, OS.OUTLINE, ui.px(1))
         }
         col.addView(ui.title("Xclipse ENN-SS"))
-        col.addView(ui.toggleRow("Nội suy khung hình", { settings.enabled }) {
+        col.addView(ui.toggleRow("Nội suy khung hình (tổng)", { settings.enabled }) {
             settings = settings.copy(enabled = it); onChange(settings)
+        })
+        // App đang ở trước: bật nội suy riêng cho app này, có hiệu lực ngay (không cần mở app, không cần khởi động lại).
+        val fg = foreground()
+        if (fg.isEmpty()) {
+            col.addView(ui.caption("Chưa nhận ra app đang chạy (bật Trợ năng, rồi chuyển vào game một lần)"))
+        } else {
+            val pm = ctx.packageManager
+            val label = try { pm.getApplicationLabel(pm.getApplicationInfo(fg, 0)).toString() } catch (_: Throwable) { fg }
+            col.addView(ui.toggleRow("Nội suy cho: $label", { fg in settings.enabledApps }) {
+                settings = settings.copy(enabledApps = if (it) settings.enabledApps + fg else settings.enabledApps - fg)
+                onChange(settings)
+            })
+        }
+        col.addView(ui.toggleRow("Chỉ nội suy app đã bật", { settings.onlyEnabledApps }) {
+            settings = settings.copy(onlyEnabledApps = it); onChange(settings)
         })
         col.addView(ui.caption("Model flow / độ phân giải xử lý (360p=640, 540p=960, 720p=1280)"))
         col.addView(ui.segmented(listOf("Tự động", "720p", "540p", "360p"), tierIndex(settings.tier)) {

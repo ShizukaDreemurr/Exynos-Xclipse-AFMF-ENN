@@ -15,6 +15,7 @@ class OverlayManager(
     onStopRequested: () -> Unit,
     onRecordToggle: () -> String = { "" },
     isRecording: () -> Boolean = { false },
+    foreground: () -> String = { "" },
 ) {
     private val main = Handler(Looper.getMainLooper())
 
@@ -23,7 +24,7 @@ class OverlayManager(
 
     private val video = VideoOverlay(host, surfaceListener)
     private val hud = HudOverlay(host)
-    private val menu = MenuOverlay(host, initial, ::applySettings, onStopRequested, onRecordToggle, isRecording)
+    private val menu = MenuOverlay(host, initial, ::applySettings, onStopRequested, onRecordToggle, isRecording, foreground)
 
     val trusted: Boolean get() = host.trusted
 

@@ -21,6 +21,9 @@ data class FluidSettings(
     val sensitivity: Int = 1,
     /** Bảo vệ HUD/chữ đứng yên. */
     val hudProtect: Boolean = true,
+    /** Chỉ nội suy app đã bật trong menu (app lạ/launcher/hệ thống chạy trực tiếp, không tốn tài nguyên). */
+    val onlyEnabledApps: Boolean = true,
+    val enabledApps: Set<String> = emptySet(),
 )
 
 class SettingsStore(context: Context) {
@@ -37,6 +40,8 @@ class SettingsStore(context: Context) {
         alwaysInterp = prefs.getBoolean("always", false),
         sensitivity = prefs.getInt("sens", 1),
         hudProtect = prefs.getBoolean("hudprot", true),
+        onlyEnabledApps = prefs.getBoolean("onlyapps", true),
+        enabledApps = prefs.getStringSet("apps_on", emptySet())?.toSet() ?: emptySet(),
     )
 
     fun save(s: FluidSettings) {
@@ -51,6 +56,8 @@ class SettingsStore(context: Context) {
             .putBoolean("always", s.alwaysInterp)
             .putInt("sens", s.sensitivity)
             .putBoolean("hudprot", s.hudProtect)
+            .putBoolean("onlyapps", s.onlyEnabledApps)
+            .putStringSet("apps_on", s.enabledApps)
             .apply()
     }
 
