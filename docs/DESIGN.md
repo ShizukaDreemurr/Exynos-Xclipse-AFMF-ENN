@@ -1,4 +1,4 @@
-# Thiết kế giao diện FluidFrames
+# Thiết kế giao diện Xclipse ENN-SS
 
 Giao diện làm lại theo tinh thần **One UI** (Samsung) nhưng là thiết kế gốc: **không dùng logo, tên sản phẩm hay
 tài sản thương hiệu của Samsung / Exynos / Xclipse**. Xclipse chỉ là nguồn cảm hứng cho hình "nhật thực"

@@ -12,7 +12,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="FluidFrames"
+        android:label="Xclipse ENN-SS"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <uses-native-library android:name="libenn_public_api_cpp.so" android:required="false" />
@@ -37,7 +37,7 @@
         <service
             android:name=".OverlayAccessibilityService"
             android:exported="true"
-            android:label="FluidFrames overlay"
+            android:label="Xclipse ENN-SS overlay"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

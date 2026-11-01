@@ -29,7 +29,7 @@ fun HomeScreen(
     val ready = a11yOn && notifOn
     Column(Modifier.fillMaxWidth()) {
         LargeHeader(
-            title = "FluidFrames",
+            title = "Xclipse ENN-SS",
             subtitle = "Nội suy khung hình 30→60 fps cho Exynos 2600",
             minHeight = 300.dp,
         ) {

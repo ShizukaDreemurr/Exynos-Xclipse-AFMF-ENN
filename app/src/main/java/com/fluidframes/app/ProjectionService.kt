@@ -68,7 +68,7 @@ class ProjectionService : Service() {
             a11y != null -> AccessibilityOverlayHost(a11y)
             // Không dùng overlay thường (alpha 0.8): hình bị trộn 20% với game thật => bóng ma (after image).
             else -> {
-                Toast.makeText(this, "Hãy bật dịch vụ Trợ năng FluidFrames rồi bấm Bắt đầu lại", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Hãy bật dịch vụ Trợ năng Xclipse ENN-SS rồi bấm Bắt đầu lại", Toast.LENGTH_LONG).show()
                 return false
             }
         }
@@ -176,7 +176,7 @@ class ProjectionService : Service() {
             this, 0, stopIntent(this), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("FluidFrames")
+            .setContentTitle("Xclipse ENN-SS")
             .setContentText("Đang ghi màn hình")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setOngoing(true)

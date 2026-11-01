@@ -15,7 +15,7 @@ object NpuDiagnostics {
 
     data class Report(val rows: List<Row>, val npuMsAt640: Float?, val npuWorks: Boolean) {
         fun toText(): String = buildString {
-            appendLine("FluidFrames — báo cáo NPU")
+            appendLine("Xclipse ENN-SS — báo cáo NPU")
             for (r in rows) {
                 appendLine("[${r.level}] ${r.title}${if (r.detail.isNotBlank()) ": " + r.detail else ""}")
             }
@@ -70,6 +70,16 @@ object NpuDiagnostics {
             } catch (t: Throwable) {
                 rows += Row("Cách ${s.id}: ${s.label}", Level.FAIL, "${t.javaClass.simpleName}: ${(t.message ?: "").take(140)}")
             } finally { try { e?.close() } catch (_: Throwable) {} }
+        }
+
+        // 5b. Chạy thử model siêu nhỏ (tách lỗi model hay lỗi cách chạy)
+        for (probe in listOf("probe_nchw", "probe_nhwc")) {
+            val has = try { context.assets.open("models/$probe.tflite").close(); true } catch (_: Throwable) { false }
+            if (!has) { rows += Row("Chạy thử $probe", Level.INFO, "chưa có model"); continue }
+            for (st in NpuEnv.strategies.take(3)) {
+                val r = NpuEnv.probeRun(context, "models/$probe.tflite", st)
+                rows += Row("Chạy thử $probe · cách ${st.id}", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
+            }
         }
 
         // 6. Đo tốc độ

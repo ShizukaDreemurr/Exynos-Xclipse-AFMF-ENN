@@ -36,7 +36,7 @@ class MenuOverlay(
         val tv = EclipseView(ctx).apply {
             background = OS.rounded(0xCC0A0C12.toInt(), 28 * dp, OS.OUTLINE, (1 * dp).toInt())
             setPadding((6 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt())
-            contentDescription = "FluidFrames: chạm để mở bảng điều khiển"
+            contentDescription = "Xclipse ENN-SS: chạm để mở bảng điều khiển"
         }
         val lp = WindowManager.LayoutParams(
             (52 * dp).toInt(), (52 * dp).toInt(), host.windowType,
@@ -111,7 +111,7 @@ class MenuOverlay(
             setPadding(ui.px(16), ui.px(14), ui.px(16), ui.px(16))
             background = OS.rounded(OS.BG, 28 * dp, OS.OUTLINE, ui.px(1))
         }
-        col.addView(ui.title("FluidFrames"))
+        col.addView(ui.title("Xclipse ENN-SS"))
         col.addView(ui.toggleRow("Nội suy khung hình", { settings.enabled }) {
             settings = settings.copy(enabled = it); onChange(settings)
         })
@@ -130,7 +130,7 @@ class MenuOverlay(
             settings = settings.copy(secureOverlay = it); onChange(settings)
         })
         col.addView(View(ctx), LinearLayout.LayoutParams(1, ui.px(8)))
-        col.addView(ui.button("Dừng FluidFrames", danger = true) { closePanel(); onStop() })
+        col.addView(ui.button("Dừng Xclipse ENN-SS", danger = true) { closePanel(); onStop() })
 
         val b = bubbleLp
         val lp = WindowManager.LayoutParams(

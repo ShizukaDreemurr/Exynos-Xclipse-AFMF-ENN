@@ -1,4 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="a11y_description">FluidFrames chỉ dùng dịch vụ này để vẽ lớp phủ cho phép chạm xuyên qua. Ứng dụng không đọc nội dung màn hình qua dịch vụ trợ năng.</string>
+    <string name="a11y_description">Xclipse ENN-SS chỉ dùng dịch vụ này để vẽ lớp phủ cho phép chạm xuyên qua. Ứng dụng không đọc nội dung màn hình qua dịch vụ trợ năng.</string>
 </resources>

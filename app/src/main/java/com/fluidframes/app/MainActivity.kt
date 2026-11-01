@@ -112,13 +112,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openAccessibility() {
-        message = "Trong Trợ năng, chọn “FluidFrames overlay” rồi bật. Cài lại APK sẽ tự tắt dịch vụ này."
+        message = "Trong Trợ năng, chọn “Xclipse ENN-SS overlay” rồi bật. Cài lại APK sẽ tự tắt dịch vụ này."
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun onStartClicked() {
         if (OverlayAccessibilityService.instance == null) {
-            message = "Hãy bật dịch vụ Trợ năng “FluidFrames overlay”, rồi quay lại bấm Bắt đầu."
+            message = "Hãy bật dịch vụ Trợ năng “Xclipse ENN-SS overlay”, rồi quay lại bấm Bắt đầu."
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
 
     private fun copyReport() {
         val text = report?.toText() ?: return
-        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("FluidFrames NPU", text))
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Xclipse ENN-SS NPU", text))
         Toast.makeText(this, "Đã sao chép báo cáo", Toast.LENGTH_SHORT).show()
     }
 

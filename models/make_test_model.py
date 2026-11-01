@@ -29,6 +29,19 @@ def build(h, w, width=32):
     return tf.keras.Model(inp, y)
 
 
+def build_probe(nchw, n=64):
+    """Model cực nhỏ để kiểm tra NPU chạy được hay không (1 conv)."""
+    if nchw:
+        inp = tf.keras.Input(shape=(6, n, n), batch_size=1, name="input")
+        x = tf.keras.layers.Permute((2, 3, 1))(inp)
+        x = tf.keras.layers.Conv2D(5, 3, strides=2, padding="same")(x)
+        y = tf.keras.layers.Permute((3, 1, 2))(x)
+    else:
+        inp = tf.keras.Input(shape=(n, n, 6), batch_size=1, name="input")
+        y = tf.keras.layers.Conv2D(5, 3, strides=2, padding="same")(inp)
+    return tf.keras.Model(inp, y)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sizes", default="640x288,960x416,1280x576")
@@ -36,10 +49,14 @@ def main():
     ap.add_argument("--compile", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    for s in a.sizes.split(","):
-        w, h = (int(v) for v in s.split("x"))
-        long_side = max(w, h)
-        m = build(h, w)
+    for s in a.sizes.split(",") + ["probe_nchw", "probe_nhwc"]:
+        if s.startswith("probe"):
+            long_side = s
+            m = build_probe(s.endswith("nchw"))
+        else:
+            w, h = (int(v) for v in s.split("x"))
+            long_side = max(w, h)
+            m = build(h, w)
         conv = tf.lite.TFLiteConverter.from_keras_model(m)
         raw = os.path.join(a.out, f"flow_{long_side}_raw.tflite")
         open(raw, "wb").write(conv.convert())

@@ -1,4 +1,4 @@
-# FluidFrames
+# Xclipse ENN-SS
 
 Nội suy khung hình 30→60 FPS kiểu AFMF cho Android (MediaProjection → Vulkan compute → overlay), flow qua NPU Exynos (LiteRT/ENN) hoặc block-matching GPU.
 

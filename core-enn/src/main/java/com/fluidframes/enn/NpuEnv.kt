@@ -77,4 +77,28 @@ object NpuEnv {
         CompiledModel.create(context.assets, assetName, CompiledModel.Options(Accelerator.CPU)).close()
         "OK"
     } catch (t: Throwable) { "lỗi: ${t.javaClass.simpleName}: ${(t.message ?: "").take(200)}" }
+
+    /** Chạy thử model nhỏ trên NPU; trả về chuỗi kết quả (OK hoặc giai đoạn lỗi). */
+    fun probeRun(context: Context, assetName: String, s: Strategy): String {
+        val e = create(context, s.env)
+        var stage = "nạp"
+        return try {
+            val m = load(context, assetName, s, e)
+            try {
+                stage = "tạo buffer"
+                val ins = m.createInputBuffers()
+                val outs = m.createOutputBuffers()
+                stage = "ghi input"
+                ins[0].writeFloat(FloatArray(6 * 64 * 64) { (it % 7) / 7f })
+                stage = "chạy"
+                m.run(ins, outs)
+                stage = "đọc output"
+                val o = outs[0].readFloat()
+                ins.forEach { it.close() }; outs.forEach { it.close() }
+                "OK (${o.size} giá trị)"
+            } finally { try { m.close() } catch (_: Throwable) {} }
+        } catch (t: Throwable) {
+            "[$stage] ${t.javaClass.simpleName}: ${(t.message ?: "").take(160)}"
+        } finally { try { e?.close() } catch (_: Throwable) {} }
+    }
 }
