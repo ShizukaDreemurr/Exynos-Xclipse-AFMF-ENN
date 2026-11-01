@@ -30,7 +30,7 @@ fun HomeScreen(
     Column(Modifier.fillMaxWidth()) {
         LargeHeader(
             title = "Xclipse ENN-SS",
-            subtitle = "Nội suy khung hình 30→60 fps cho Exynos 2600",
+            subtitle = "Nội suy khung hình cho Exynos 2600 · " + com.fluidframes.app.BuildConfig.BUILD_TAG,
             minHeight = 300.dp,
         ) {
             EclipseMark(size = 132.dp, active = running)

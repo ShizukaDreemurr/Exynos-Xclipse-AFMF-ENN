@@ -12,8 +12,11 @@ android {
         applicationId = "com.fluidframes"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        val run = (System.getenv("GITHUB_RUN_NUMBER") ?: "0").toIntOrNull() ?: 0
+        val sha = (System.getenv("GITHUB_SHA") ?: "local").take(7)
+        versionCode = 1 + run
+        versionName = "0.3.$run"
+        buildConfigField("String", "BUILD_TAG", "\"v0.3.$run·$sha\"")
     }
 
     buildTypes {
@@ -22,7 +25,7 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
 
     packaging { jniLibs { useLegacyPackaging = true; pickFirsts += "**/libLiteRt.so" } }
 

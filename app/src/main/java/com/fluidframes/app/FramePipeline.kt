@@ -1,6 +1,7 @@
 package com.fluidframes.app
 
 import android.content.Context
+import com.fluidframes.app.BuildConfig
 import android.util.Log
 import com.fluidframes.capture.FrameRingBuffer
 import com.fluidframes.capture.FrameSlot
@@ -75,7 +76,9 @@ class FramePipeline(
         val s = stats
         val out = s.outFps.fps()
         return buildString {
+            append("Xclipse ENN-SS %s\n".format(BuildConfig.BUILD_TAG))
             append("src %.0f → out %.0f fps  [%s %s]\n".format(s.srcFps.fps(), out, lastMode, tierLabel(lastTier)))
+            append("màn: %.0f Hz (tối đa %.0f)\n".format(curHz(), 1000f / vsyncMs()))
             append("NN: %s | host: %s | overlay: %s\n".format(backendLabel, hostLabel, if (overlayShown) "on" else "off"))
             append("pre %.1f | flow %.1f | warp %.1f | pres %.1f ms\n".format(
                 s.preMs.value, s.flowMs.value, s.warpMs.value, s.presentMs.value))
@@ -136,6 +139,11 @@ class FramePipeline(
             prev?.release()
         }
     }
+
+    private fun curHz(): Float = try {
+        context.getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY).refreshRate
+    } catch (_: Throwable) { 0f }
 
     private var vsyncCached = 16.6f
     private var vsyncAtNs = 0L
