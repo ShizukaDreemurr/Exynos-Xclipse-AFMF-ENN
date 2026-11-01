@@ -78,6 +78,7 @@ Pipeline::~Pipeline() {
         vkDestroyFence(dev_, fenceA_, nullptr);
         vkDestroyFence(dev_, fenceB_, nullptr);
         vkDestroySemaphore(dev_, acquireSem_, nullptr);
+        if (acquireSem2_) vkDestroySemaphore(dev_, acquireSem2_, nullptr);
         vkDestroyCommandPool(dev_, pool_, nullptr);
         vkDestroyDevice(dev_, nullptr);
     }
@@ -205,6 +206,7 @@ bool Pipeline::Init(AAssetManager* assets) {
     VK_TRY(vkCreateFence(dev_, &fci, nullptr, &fenceB_));
     VkSemaphoreCreateInfo semi{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
     VK_TRY(vkCreateSemaphore(dev_, &semi, nullptr, &acquireSem_));
+    VK_TRY(vkCreateSemaphore(dev_, &semi, nullptr, &acquireSem2_));
 
     VkQueryPoolCreateInfo qpi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
     qpi.queryType = VK_QUERY_TYPE_TIMESTAMP;
@@ -788,6 +790,36 @@ bool Pipeline::ReadTimestamps(uint32_t first, uint32_t count, double* msOut) {
     return true;
 }
 
+// Ghi lệnh blit out_ -> ảnh swapchain idx rồi chuyển layout sang PRESENT.
+void Pipeline::CmdBlitOut(VkCommandBuffer cb, uint32_t idx) {
+    VkImage dst = scImages_[idx];
+    VkImageMemoryBarrier toDst{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    toDst.srcAccessMask = 0;
+    toDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toDst.image = dst;
+    toDst.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &toDst);
+    VkImageBlit region{};
+    region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.srcOffsets[1] = {static_cast<int32_t>(out_.w), static_cast<int32_t>(out_.h), 1};
+    region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.dstOffsets[1] = {static_cast<int32_t>(scExtent_.width), static_cast<int32_t>(scExtent_.height), 1};
+    vkCmdBlitImage(cb, out_.img, VK_IMAGE_LAYOUT_GENERAL, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                   1, &region, VK_FILTER_LINEAR);
+    VkImageMemoryBarrier toPresent = toDst;
+    toPresent.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toPresent.dstAccessMask = 0;
+    toPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &toPresent);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Giai đoạn 1
 // ---------------------------------------------------------------------------------------------
@@ -795,6 +827,7 @@ bool Pipeline::ReadTimestamps(uint32_t first, uint32_t count, double* msOut) {
 int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool blockMatch) {
     std::lock_guard<std::mutex> lk(mu_);
     const auto t0 = Clock::now();
+    if (fusedPending_) { fusedPending_ = false; scDirty_ = true; }  // Finish không được gọi: ảnh swapchain đã acquire bị bỏ => dựng lại
     if (procW_ == 0) {
         FailMsg("Begin gọi trước Configure");
         return kBeginError;
@@ -826,6 +859,21 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
     pc_.staticThr = 0.02f;
     pc_.occThr = 0.14f;
 
+    // Đường gộp (GPU block-match): lấy trước 2 ảnh swapchain, dựng cả khung nội suy lẫn khung thật trong 1 lần gửi GPU.
+    bool fused = blockMatch && !nn && sc_ != VK_NULL_HANDLE && !scDirty_;
+    uint32_t idxA = 0, idxB = 0;
+    if (fused) {
+        const VkResult r1 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, acquireSem_, VK_NULL_HANDLE, &idxA);
+        if (r1 != VK_SUCCESS && r1 != VK_SUBOPTIMAL_KHR) {
+            if (r1 == VK_ERROR_OUT_OF_DATE_KHR) scDirty_ = true;
+            fused = false;
+        } else {
+            const VkResult r2 = vkAcquireNextImageKHR(dev_, sc_, kAcquireTimeoutNs, acquireSem2_, VK_NULL_HANDLE, &idxB);
+            if (r2 != VK_SUCCESS && r2 != VK_SUBOPTIMAL_KHR) { scDirty_ = true; return kBeginError; }
+            if (r1 == VK_SUBOPTIMAL_KHR || r2 == VK_SUBOPTIMAL_KHR) scDirty_ = true;
+        }
+    }
+
     VkCommandBuffer cb = cmdPre_;
     if (vkResetCommandBuffer(cb, 0) != VK_SUCCESS) { FailMsg("reset cmdPre"); return kBeginError; }
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -856,8 +904,55 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
                       VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_HOST_READ_BIT);
     }
     if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, qp_, 2);
-    if (vkEndCommandBuffer(cb) != VK_SUCCESS) { FailMsg("end cmdPre"); return kBeginError; }
-    if (!SubmitAndWait(cb, fenceA_)) return kBeginError;
+    if (fused) {
+        // Khung nội suy -> ảnh A
+        if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, qp_, 3);
+        pc_.mode = 1;
+        vkCmdPushConstants(cb, pl_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pc_);
+        vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, pWarp_);
+        vkCmdDispatch(cb, CeilDiv(static_cast<int>(out_.w), 8), CeilDiv(static_cast<int>(out_.h), 8), 1);
+        CmdMemBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+        if (tsValid_) vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, qp_, 4);
+        CmdBlitOut(cb, idxA);
+        // Khung thật -> ảnh B (out_ phải đọc xong bởi blit trước khi ghi đè)
+        VkMemoryBarrier war{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+        war.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        war.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 1, &war, 0, nullptr, 0, nullptr);
+        pc_.mode = 0;
+        vkCmdPushConstants(cb, pl_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstants), &pc_);
+        vkCmdDispatch(cb, CeilDiv(static_cast<int>(out_.w), 8), CeilDiv(static_cast<int>(out_.h), 8), 1);
+        CmdMemBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+        CmdRelease(cb, a);
+        if (b != a) CmdRelease(cb, b);
+        CmdBlitOut(cb, idxB);
+        pc_.mode = 1;
+    }
+    if (vkEndCommandBuffer(cb) != VK_SUCCESS) { FailMsg("end cmdPre"); if (fused) scDirty_ = true; return kBeginError; }
+    if (fused) {
+        const VkSemaphore waits[2] = {acquireSem_, acquireSem2_};
+        const VkPipelineStageFlags ws[2] = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
+        const VkSemaphore sigs[2] = {renderDone_[idxA], renderDone_[idxB]};
+        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        si.waitSemaphoreCount = 2;
+        si.pWaitSemaphores = waits;
+        si.pWaitDstStageMask = ws;
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cb;
+        si.signalSemaphoreCount = 2;
+        si.pSignalSemaphores = sigs;
+        if (vkQueueSubmit(queue_, 1, &si, fenceA_) != VK_SUCCESS) { FailMsg("submit fused"); scDirty_ = true; return kBeginError; }
+        if (vkWaitForFences(dev_, 1, &fenceA_, VK_TRUE, UINT64_MAX) != VK_SUCCESS) { scDirty_ = true; return kBeginError; }
+        vkResetFences(dev_, 1, &fenceA_);
+        fusedPending_ = true;
+        fusedA_ = idxA;
+        fusedB_ = idxB;
+        double wms[1] = {0};
+        if (ReadTimestamps(3, 2, wms)) stats_[2] = static_cast<float>(wms[0]);
+    } else if (!SubmitAndWait(cb, fenceA_)) {
+        return kBeginError;
+    }
 
     double ms[2] = {0, 0};
     if (ReadTimestamps(0, 3, ms)) {
@@ -890,6 +985,34 @@ bool Pipeline::Finish(bool interp, bool nnFlowReady, float gapMs) {
     std::lock_guard<std::mutex> lk(mu_);
     if (!curPrev_ || !curCur_) return FailMsg("Finish gọi khi chưa có Begin");
     presentWaitMs_ = 0.0;
+    if (fusedPending_) {
+        fusedPending_ = false;
+        bool okf = true;
+        if (!interp) {
+            // Scene cut / chuyển động quá lớn: ảnh A đang chứa khung nội suy hỏng -> vẽ lại bằng khung thật (out_ đang giữ khung thật).
+            VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+            bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            VK_TRY(vkResetCommandBuffer(cmdBlit_, 0));
+            VK_TRY(vkBeginCommandBuffer(cmdBlit_, &bi));
+            CmdBlitOut(cmdBlit_, fusedA_);
+            VK_TRY(vkEndCommandBuffer(cmdBlit_));
+            if (!SubmitAndWait(cmdBlit_, fenceB_)) okf = false;
+        }
+        for (uint32_t id : {fusedA_, fusedB_}) {
+            VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
+            pi.waitSemaphoreCount = 1;
+            pi.pWaitSemaphores = &renderDone_[id];
+            pi.swapchainCount = 1;
+            pi.pSwapchains = &sc_;
+            pi.pImageIndices = &id;
+            const VkResult pr = vkQueuePresentKHR(queue_, &pi);
+            if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) scDirty_ = true;
+            else if (pr != VK_SUCCESS) { Fail("vkQueuePresentKHR", pr); okf = false; }
+        }
+        stats_[7] = 0.f;
+        curPrev_ = curCur_ = nullptr;
+        return okf;
+    }
     bool ok = true;
     if (interp) {
         ok = OutPass(1, nnFlowReady, /*acquire=*/false, /*release=*/false);

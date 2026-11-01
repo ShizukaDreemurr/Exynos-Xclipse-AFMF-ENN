@@ -113,6 +113,7 @@ private:
     void CmdMemBarrier(VkCommandBuffer cb, VkPipelineStageFlags dstStages, VkAccessFlags dstAccess);
 
     bool OutPass(int mode, bool packFlow, bool acquire, bool release);
+    void CmdBlitOut(VkCommandBuffer cb, uint32_t idx);
     bool SubmitAndWait(VkCommandBuffer cb, VkFence fence);
     bool ReadTimestamps(uint32_t first, uint32_t count, double* msOut);
 
@@ -166,6 +167,10 @@ private:
     std::vector<VkImage> scImages_;
     std::vector<VkSemaphore> renderDone_;
     VkSemaphore acquireSem_ = VK_NULL_HANDLE;
+    VkSemaphore acquireSem2_ = VK_NULL_HANDLE;
+    // Đường GPU "gộp": Begin dựng sẵn cả khung nội suy và khung thật bằng 1 lần gửi GPU; Finish chỉ present.
+    bool fusedPending_ = false;
+    uint32_t fusedA_ = 0, fusedB_ = 0;
     VkExtent2D scExtent_{};
     bool scDirty_ = false;
 
