@@ -80,6 +80,7 @@ object NpuEnv {
 
     /** Chạy thử model nhỏ trên NPU; trả về chuỗi kết quả (OK hoặc giai đoạn lỗi). */
     fun probeRun(context: Context, assetName: String, s: Strategy): String {
+        NativeLog.start(); NativeLog.clear()
         val e = create(context, s.env)
         var stage = "nạp"
         return try {
@@ -98,7 +99,7 @@ object NpuEnv {
                 "OK (${o.size} giá trị)"
             } finally { try { m.close() } catch (_: Throwable) {} }
         } catch (t: Throwable) {
-            "[$stage] ${t.javaClass.simpleName}: ${(t.message ?: "").take(160)}"
+            "[$stage] ${t.javaClass.simpleName}: ${(t.message ?: "").take(160)}\n--- log native ---\n${NativeLog.tail(14, 1100)}"
         } finally { try { e?.close() } catch (_: Throwable) {} }
     }
 }

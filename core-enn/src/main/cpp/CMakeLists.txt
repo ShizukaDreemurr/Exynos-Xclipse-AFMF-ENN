@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(ennlog CXX)
+set(CMAKE_CXX_STANDARD 17)
+add_library(ennlog SHARED ennlog.cpp)
+target_link_libraries(ennlog log)
