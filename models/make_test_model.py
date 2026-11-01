@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--sizes", default="640x288,960x416,1280x576")
     ap.add_argument("--out", default="out_models")
     ap.add_argument("--compile", action="store_true")
+    ap.add_argument("--ifr", default="", help="checkpoint IFRNet-S .pth: dùng flow thô của IFRNet thay model ngẫu nhiên")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     for s in a.sizes.split(",") + ["probe_nchw", "probe_nhwc"]:
@@ -56,7 +57,11 @@ def main():
         else:
             w, h = (int(v) for v in s.split("x"))
             long_side = max(w, h)
-            m = build(h, w)
+            if a.ifr:
+                import torch, ifrnet_coarse
+                m = ifrnet_coarse.build(h, w, torch.load(a.ifr, map_location="cpu"), half_out=True)
+            else:
+                m = build(h, w)
         conv = tf.lite.TFLiteConverter.from_keras_model(m)
         raw = os.path.join(a.out, f"flow_{long_side}_raw.tflite")
         open(raw, "wb").write(conv.convert())

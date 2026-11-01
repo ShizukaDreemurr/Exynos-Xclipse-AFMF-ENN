@@ -2,7 +2,7 @@ name: aot-compile-model
 on:
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py']
+    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py', 'models/ifrnet_coarse.py', 'models/weights/**']
 permissions:
   contents: write
 jobs:
@@ -16,7 +16,7 @@ jobs:
           python-version: '3.11'
       - name: Install
         run: |
-          pip install tensorflow-cpu numpy > /tmp/pip1.log 2>&1 || { echo "::error title=pip1::$(tail -c 600 /tmp/pip1.log | tr '\n' ' ')"; exit 1; }
+          pip install tensorflow-cpu numpy torch > /tmp/pip1.log 2>&1 || { echo "::error title=pip1::$(tail -c 600 /tmp/pip1.log | tr '\n' ' ')"; exit 1; }
           (pip install 'ai-edge-litert==2.3.0' && pip install --no-deps ai-edge-litert-sdk-samsung-nightly) > /tmp/pip2.log 2>&1 || { echo "::error title=pip2::$(tail -c 900 /tmp/pip2.log | tr '\n' ' ')"; exit 1; }
           ls $(python -c "import ai_edge_litert,os;print(os.path.dirname(ai_edge_litert.__file__))")/vendors/samsung/compiler 2>&1 | head -3 | tr "\n" " " > /tmp/plug.txt; echo "::notice title=plugin::$(cat /tmp/plug.txt)"
           echo "::notice title=pip::$(pip list 2>/dev/null | grep -i -E 'litert|tensorflow' | tr '\n' ' ')"
@@ -29,7 +29,7 @@ jobs:
       - name: Build + AOT compile
         working-directory: models
         run: |
-          LD_PRELOAD=$SHIM python make_test_model.py --compile > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tr "\r" "\n" < /tmp/aot.log | grep -E "AOTERR|error|Error|ERROR|fail|Fail|unsupported|Unsupported|not " | grep -v "it/s" | tail -c 2500 | tr '\n' ' ')"; exit 1; }
+          LD_PRELOAD=$SHIM python make_test_model.py --compile --ifr weights/IFRNet_S_Vimeo90K.pth > /tmp/aot.log 2>&1 || { echo "::error title=aot::$(tr "\r" "\n" < /tmp/aot.log | grep -E "AOTERR|error|Error|ERROR|fail|Fail|unsupported|Unsupported|not " | grep -v "it/s" | tail -c 2500 | tr '\n' ' ')"; exit 1; }
           echo "::notice title=aotlog::$(tail -c 800 /tmp/aot.log | tr '\n' ' ')"
           find out_models -name '*.tflite' | xargs ls -l | awk '{print $5" "$9}' | tr '\n' ';' > /tmp/files.txt
           echo "::notice title=files::$(cat /tmp/files.txt)"
