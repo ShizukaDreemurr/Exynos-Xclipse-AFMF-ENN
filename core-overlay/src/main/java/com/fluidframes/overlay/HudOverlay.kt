@@ -21,10 +21,10 @@ class HudOverlay(private val host: OverlayHost) {
         val dp = host.context.resources.displayMetrics.density
         val t = TextView(host.context).apply {
             setTextColor(Color.WHITE)
-            setBackgroundColor(0x99000000.toInt())
+            background = OS.rounded(0xAA0A0C12.toInt(), 10 * dp)
             typeface = Typeface.MONOSPACE
             textSize = 10f
-            setPadding((6 * dp).toInt(), (4 * dp).toInt(), (6 * dp).toInt(), (4 * dp).toInt())
+            setPadding((10 * dp).toInt(), (6 * dp).toInt(), (10 * dp).toInt(), (6 * dp).toInt())
         }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,

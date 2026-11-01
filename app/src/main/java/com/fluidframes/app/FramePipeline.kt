@@ -86,6 +86,16 @@ class FramePipeline(
         }
     }
 
+    /** Ảnh chụp số liệu cho giao diện. */
+    fun live(): LiveStats {
+        val s = stats
+        return LiveStats(
+            srcFps = s.srcFps.fps().toFloat(), outFps = s.outFps.fps().toFloat(),
+            mode = lastMode.name, tier = tierLabel(lastTier), backend = backendLabel,
+            workMs = s.workMs.value.toFloat(), dropPct = s.dropRate() * 100f, thermal = thermal.status,
+        )
+    }
+
     private fun tierLabel(t: ProcTier) = t.label
 
     private fun loop() {

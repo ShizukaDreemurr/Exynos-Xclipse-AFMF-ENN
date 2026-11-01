@@ -30,6 +30,7 @@ import com.fluidframes.vulkan.NativePipeline
 import com.fluidframes.capture.CaptureConfig
 import com.fluidframes.capture.FrameRingBuffer
 import com.fluidframes.capture.ScreenCaptureEngine
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Foreground service (type mediaProjection) sở hữu MediaProjection + capture + ring buffer.
@@ -48,7 +49,7 @@ class ProjectionService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val hudTick = object : Runnable {
         override fun run() {
-            pipeline?.let { overlay?.setHudText(it.hudText()) }
+            pipeline?.let { overlay?.setHudText(it.hudText()); live.value = it.live() }
             main.postDelayed(this, 500)
         }
     }
@@ -96,6 +97,7 @@ class ProjectionService : Service() {
             onStopRequested = { stopSelf() },
         ).also { it.show() }
         fp.start()
+        running.value = true
         main.post(hudTick)
         if (!host.trusted) {
             Toast.makeText(this, "Chưa bật Trợ năng: overlay bị giới hạn 80% độ mờ (hình trộn với game)", Toast.LENGTH_LONG).show()
@@ -150,6 +152,8 @@ class ProjectionService : Service() {
 
     override fun onDestroy() {
         main.removeCallbacks(hudTick)
+        running.value = false
+        live.value = null
         pipeline?.stop()
         pipeline = null
         overlay?.hide()
@@ -187,6 +191,10 @@ class ProjectionService : Service() {
     }
 
     companion object {
+        /** Trạng thái cho giao diện (Trang chủ). */
+        val running = MutableStateFlow(false)
+        val live = MutableStateFlow<LiveStats?>(null)
+
         private const val TAG = "ProjectionService"
         private const val CHANNEL_ID = "fluidframes.capture"
         private const val NOTIF_ID = 1001

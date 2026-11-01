@@ -2,56 +2,60 @@ package com.fluidframes.enn
 
 import android.content.Context
 import android.util.Log
-import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.CompiledModel
 import com.google.ai.edge.litert.Environment
+import com.google.ai.edge.litert.TensorBuffer
 import java.nio.ByteBuffer
 
 /**
- * LiteRT CompiledModel, ưu tiên NPU (Samsung LiteCore nếu runtime có mặt) rồi GPU.
- * Lưu ý: đường này sao chép CPU float[] <-> buffer (không zero-copy). Zero-copy qua AHardwareBuffer
- * cần API C++ của LiteRT/ENN — xem [EnnNativeBackend].
+ * LiteRT CompiledModel chạy model đã AOT cho Exynos NPU (qua libLiteRtDispatch_Samsung.so).
+ * Thử lần lượt các [NpuEnv.strategies]; nhớ cách thành công để lần sau dùng ngay.
+ * Đường này sao chép CPU float[] <-> buffer (chưa zero-copy).
  */
 class LiteRtBackend(private val context: Context, private val preferNpu: Boolean = true) : InferenceBackend {
 
     private var model: CompiledModel? = null
-    private var inBufs: List<com.google.ai.edge.litert.TensorBuffer> = emptyList()
-    private var outBufs: List<com.google.ai.edge.litert.TensorBuffer> = emptyList()
+    private var env: Environment? = null
+    private var inBufs: List<TensorBuffer> = emptyList()
+    private var outBufs: List<TensorBuffer> = emptyList()
     private var inArr = FloatArray(0)
     private var outArr = FloatArray(0)
     private var usedNpu = false
-    private var env: Environment? = null
-    var lastError: String = ""
 
-    override val name: String
-        get() = if (usedNpu) "LiteRT/NPU" else "LiteRT/GPU"
+    var lastError: String = ""
+        private set
+    var usedStrategy: NpuEnv.Strategy? = null
+        private set
+
+    override val name: String get() = if (usedNpu) "NPU Exynos" else "—"
     override val onNpu: Boolean get() = usedNpu
 
     override fun load(longSide: Int, procW: Int, procH: Int): Boolean {
         close()
         lastError = ""
-        if (preferNpu && env == null) env = NpuEnv.create(context)
+        if (!preferNpu) return false
         val path = "models/flow_$longSide.tflite"
-        val attempts = buildList {
-            if (preferNpu) add(true to CompiledModel.Options(Accelerator.NPU, Accelerator.GPU))
-            add(false to CompiledModel.Options(Accelerator.GPU))
-        }
-        for ((npu, opts) in attempts) {
+        val prefs = context.getSharedPreferences("npu", Context.MODE_PRIVATE)
+        val lastOk = prefs.getString("strategy", null)
+        val order = NpuEnv.strategies.sortedBy { if (it.id == lastOk) 0 else 1 }
+        for (s in order) {
+            val e = NpuEnv.create(context, s.env)
             try {
-                val m = CompiledModel.create(context.assets, path, opts, if (npu) env else null)
+                val m = NpuEnv.load(context, path, s, e)
                 val ib = m.createInputBuffers()
                 val ob = m.createOutputBuffers()
-                model = m
-                inBufs = ib
-                outBufs = ob
+                env = e; model = m; inBufs = ib; outBufs = ob
                 inArr = FloatArray(6 * procW * procH)
                 outArr = FloatArray(5 * (procW / 2) * (procH / 2))
-                usedNpu = npu
-                Log.i(TAG, "Nạp $path, accelerator=${if (npu) "NPU" else "GPU"}")
+                usedNpu = true
+                usedStrategy = s
+                prefs.edit().putString("strategy", s.id).apply()
+                Log.i(TAG, "Nạp $path trên NPU bằng cách ${s.id}: ${s.label}")
                 return true
             } catch (t: Throwable) {
-                Log.w(TAG, "Không biên dịch được $path (npu=$npu): ${t.message}")
-                lastError += "[${if (npu) "NPU" else "GPU"}] ${t.javaClass.simpleName}: ${(t.message ?: "").take(400)}\n"
+                lastError += "[${s.id}] ${t.javaClass.simpleName}: ${(t.message ?: "").take(160)}\n"
+                Log.w(TAG, "Cách ${s.id} lỗi: ${t.message}")
+                try { e?.close() } catch (_: Throwable) {}
             }
         }
         return false
@@ -79,9 +83,10 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
         try { inBufs.forEach { it.close() } } catch (_: Throwable) {}
         try { outBufs.forEach { it.close() } } catch (_: Throwable) {}
         try { model?.close() } catch (_: Throwable) {}
-        model = null
-        inBufs = emptyList()
-        outBufs = emptyList()
+        try { env?.close() } catch (_: Throwable) {}
+        model = null; env = null
+        inBufs = emptyList(); outBufs = emptyList()
+        usedNpu = false
     }
 
     private companion object { const val TAG = "LiteRtBackend" }

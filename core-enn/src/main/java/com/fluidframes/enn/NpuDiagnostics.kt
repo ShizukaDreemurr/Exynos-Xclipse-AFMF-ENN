@@ -1,0 +1,103 @@
+package com.fluidframes.enn
+
+import android.content.Context
+import android.os.Build
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/** Báo cáo chẩn đoán NPU có cấu trúc (để UI hiển thị và để chia sẻ dạng văn bản). */
+object NpuDiagnostics {
+
+    enum class Level { OK, WARN, FAIL, INFO }
+
+    data class Row(val title: String, val level: Level, val detail: String = "")
+
+    data class Report(val rows: List<Row>, val npuMsAt640: Float?, val npuWorks: Boolean) {
+        fun toText(): String = buildString {
+            appendLine("FluidFrames — báo cáo NPU")
+            for (r in rows) {
+                appendLine("[${r.level}] ${r.title}${if (r.detail.isNotBlank()) ": " + r.detail else ""}")
+            }
+        }
+    }
+
+    private val ennLibs = listOf(
+        "enn_public_api_cpp", "enn_public_api_cpp_lib", "enn_user_lib", "enn_user.samsung_slsi",
+    )
+
+    fun run(context: Context, benchmark: Boolean = true): Report {
+        val rows = mutableListOf<Row>()
+        rows += Row("Thiết bị", Level.INFO, "${Build.MANUFACTURER} ${Build.MODEL} · SoC ${Build.SOC_MODEL} · Android ${Build.VERSION.RELEASE}")
+
+        // 1. Thư viện ENN hệ thống
+        var ennOk = true
+        for (l in ennLibs) {
+            val ok = try { System.loadLibrary(l); true } catch (t: Throwable) { false }
+            if (!ok) ennOk = false
+            rows += Row("lib$l.so", if (ok) Level.OK else Level.FAIL, if (ok) "nạp được" else "không nạp được")
+        }
+
+        // 2. Thư viện đi kèm APK
+        val bundled = NpuEnv.bundledLibs(context)
+        val hasDispatch = bundled.any { it.contains("Dispatch_Samsung") }
+        rows += Row("Dispatch Samsung trong APK", if (hasDispatch) Level.OK else Level.FAIL, bundled.joinToString())
+
+        // 3. Accelerator
+        val env = NpuEnv.create(context, NpuEnv.EnvMode.DISPATCH_ONLY)
+        val accs = NpuEnv.accelerators(env)
+        rows += Row("Accelerator LiteRT thấy", if (accs.contains("NPU")) Level.OK else Level.FAIL, accs)
+        try { env?.close() } catch (_: Throwable) {}
+
+        // 4. Model
+        val sizes = listOf(640 to (640 to 288), 960 to (960 to 416), 1280 to (1280 to 576))
+        val modelSizes = sizes.map { (ls, _) ->
+            ls to (try { context.assets.open("models/flow_$ls.tflite").use { it.available() } } catch (t: Throwable) { -1 })
+        }
+        rows += Row("Model trong APK", if (modelSizes.all { it.second > 1000 }) Level.OK else Level.FAIL,
+            modelSizes.joinToString { "${it.first}: ${it.second}B" })
+        rows += Row("Đọc model bằng CPU", Level.INFO, NpuEnv.cpuLoadTest(context, "models/flow_640.tflite"))
+
+        // 5. Thử từng cách nạp lên NPU
+        var works = false
+        for (s in NpuEnv.strategies) {
+            val e = NpuEnv.create(context, s.env)
+            try {
+                val m = NpuEnv.load(context, "models/flow_640.tflite", s, e)
+                m.close()
+                rows += Row("Cách ${s.id}: ${s.label}", Level.OK, "nạp được")
+                works = true
+            } catch (t: Throwable) {
+                rows += Row("Cách ${s.id}: ${s.label}", Level.FAIL, "${t.javaClass.simpleName}: ${(t.message ?: "").take(140)}")
+            } finally { try { e?.close() } catch (_: Throwable) {} }
+        }
+
+        // 6. Đo tốc độ
+        var ms640: Float? = null
+        if (benchmark && works) {
+            for ((ls, wh) in sizes) {
+                val (w, h) = wh
+                val be = LiteRtBackend(context, preferNpu = true)
+                if (!be.load(ls, w, h)) {
+                    rows += Row("Đo $ls (${w}x$h)", Level.FAIL, be.lastError.trim()); continue
+                }
+                val inp = ByteBuffer.allocateDirect(6 * w * h * 4).order(ByteOrder.nativeOrder())
+                val out = ByteBuffer.allocateDirect(5 * (w / 2) * (h / 2) * 4).order(ByteOrder.nativeOrder())
+                for (i in 0 until 6 * w * h) inp.putFloat(((i * 31) % 255) / 255f)
+                repeat(5) { be.run(inp, out) }
+                var tot = 0f; var n = 0
+                repeat(40) { val t = be.run(inp, out); if (t > 0) { tot += t; n++ } }
+                if (n > 0) {
+                    val avg = tot / n
+                    if (ls == 640) ms640 = avg
+                    rows += Row("Đo $ls (${w}x$h)", Level.OK, "%.2f ms/khung · ${be.name} · cách ${be.usedStrategy?.id}".format(avg))
+                } else rows += Row("Đo $ls (${w}x$h)", Level.FAIL, "chạy lỗi")
+                be.close()
+            }
+        }
+        if (!works) rows += Row("Kết luận", Level.WARN,
+            "NPU chưa chạy được model. Ứng dụng sẽ dùng GPU (block-matching) cho tới khi có cách nạp thành công.")
+        else rows += Row("Kết luận", Level.OK, "NPU Exynos chạy được model. Lưu ý: model hiện dùng trọng số ngẫu nhiên.")
+        return Report(rows, ms640, works)
+    }
+}

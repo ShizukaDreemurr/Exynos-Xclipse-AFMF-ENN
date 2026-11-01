@@ -9,7 +9,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.fluidframes.telemetry.FlowBackend
@@ -27,25 +26,20 @@ class MenuOverlay(
 ) {
     private var settings = initial
     private val dp = host.context.resources.displayMetrics.density
-    private var bubble: TextView? = null
+    private var bubble: View? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
     private var panel: View? = null
 
     fun show() {
         if (bubble != null) return
         val ctx = host.context
-        val tv = TextView(ctx).apply {
-            text = "FF"
-            gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xCC1E88E5.toInt())
-            }
+        val tv = EclipseView(ctx).apply {
+            background = OS.rounded(0xCC0A0C12.toInt(), 28 * dp, OS.OUTLINE, (1 * dp).toInt())
+            setPadding((6 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt(), (6 * dp).toInt())
+            contentDescription = "FluidFrames: chạm để mở bảng điều khiển"
         }
         val lp = WindowManager.LayoutParams(
-            (48 * dp).toInt(), (48 * dp).toInt(), host.windowType,
+            (52 * dp).toInt(), (52 * dp).toInt(), host.windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -111,36 +105,41 @@ class MenuOverlay(
 
     private fun openPanel() {
         val ctx = host.context
+        val ui = OverlayUi(ctx)
         val col = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding((10 * dp).toInt(), (10 * dp).toInt(), (10 * dp).toInt(), (10 * dp).toInt())
-            background = GradientDrawable().apply {
-                cornerRadius = 12 * dp
-                setColor(0xEE212121.toInt())
-            }
+            setPadding(ui.px(16), ui.px(14), ui.px(16), ui.px(16))
+            background = OS.rounded(OS.BG, 28 * dp, OS.OUTLINE, ui.px(1))
         }
-        col.addView(label("FluidFrames"))
-        col.addView(toggle("Nội suy khung hình", { settings.enabled }) { settings = settings.copy(enabled = it) })
-        col.addView(cycler("Độ phân giải xử lý", ProcTier.entries.map { it.label }, settings.tier.ordinal) {
-            settings = settings.copy(tier = ProcTier.entries[it])
+        col.addView(ui.title("FluidFrames"))
+        col.addView(ui.toggleRow("Nội suy khung hình", { settings.enabled }) {
+            settings = settings.copy(enabled = it); onChange(settings)
         })
-        col.addView(cycler("Backend flow", FlowBackend.entries.map { it.label }, settings.backend.ordinal) {
-            settings = settings.copy(backend = FlowBackend.entries[it])
+        col.addView(ui.caption("Độ phân giải xử lý"))
+        col.addView(ui.segmented(listOf("Tự động", "720p", "540p", "360p"), tierIndex(settings.tier)) {
+            settings = settings.copy(tier = TIERS[it]); onChange(settings)
         })
-        col.addView(toggle("Hiện HUD số liệu", { settings.showHud }) { settings = settings.copy(showHud = it) })
-        col.addView(toggle("Overlay secure (thử nghiệm)", { settings.secureOverlay }) {
-            settings = settings.copy(secureOverlay = it)
+        col.addView(ui.caption("Công cụ tính flow"))
+        col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
+            settings = settings.copy(backend = BACKENDS[it]); onChange(settings)
         })
-        col.addView(button("Dừng FluidFrames") { closePanel(); onStop() })
+        col.addView(ui.toggleRow("HUD số liệu", { settings.showHud }) {
+            settings = settings.copy(showHud = it); onChange(settings)
+        })
+        col.addView(ui.toggleRow("Overlay secure (thử nghiệm)", { settings.secureOverlay }) {
+            settings = settings.copy(secureOverlay = it); onChange(settings)
+        })
+        col.addView(View(ctx), LinearLayout.LayoutParams(1, ui.px(8)))
+        col.addView(ui.button("Dừng FluidFrames", danger = true) { closePanel(); onStop() })
 
         val b = bubbleLp
         val lp = WindowManager.LayoutParams(
-            (270 * dp).toInt(), WindowManager.LayoutParams.WRAP_CONTENT, host.windowType,
+            (300 * dp).toInt(), WindowManager.LayoutParams.WRAP_CONTENT, host.windowType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (b?.x ?: 0) + (56 * dp).toInt()
+            x = (b?.x ?: 0) + (60 * dp).toInt()
             y = b?.y ?: 0
             title = "FluidFramesPanel"
         }
@@ -152,46 +151,12 @@ class MenuOverlay(
         }
     }
 
-    private fun label(t: String) = TextView(host.context).apply {
-        text = t
-        setTextColor(Color.WHITE)
-        textSize = 15f
-        setPadding(0, 0, 0, (6 * dp).toInt())
-    }
-
-    private fun button(t: String, onClick: () -> Unit) = Button(host.context).apply {
-        text = t
-        isAllCaps = false
-        setOnClickListener { onClick() }
-    }
-
-    private fun toggle(title: String, get: () -> Boolean, set: (Boolean) -> Unit): View {
-        val b = button("") {}
-        fun render() { b.text = "$title: ${if (get()) "BẬT" else "TẮT"}" }
-        render()
-        b.setOnClickListener {
-            set(!get())
-            render()
-            onChange(settings)
-        }
-        return b
-    }
-
-    private fun cycler(title: String, options: List<String>, start: Int, set: (Int) -> Unit): View {
-        var i = start
-        val b = button("") {}
-        fun render() { b.text = "$title: ${options[i]}" }
-        render()
-        b.setOnClickListener {
-            i = (i + 1) % options.size
-            set(i)
-            render()
-            onChange(settings)
-        }
-        return b
-    }
+    private fun tierIndex(t: ProcTier) = TIERS.indexOf(t).coerceAtLeast(0)
+    private fun backendIndex(b: FlowBackend) = BACKENDS.indexOf(b).coerceAtLeast(0)
 
     private companion object {
         const val TAG = "MenuOverlay"
+        val TIERS = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360)
+        val BACKENDS = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
     }
 }

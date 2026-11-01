@@ -2,114 +2,130 @@ package com.fluidframes.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.Gravity
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.fluidframes.app.ui.AppRoot
+import com.fluidframes.app.ui.FluidTheme
+import com.fluidframes.app.ui.HomeScreen
+import com.fluidframes.app.ui.NpuScreen
+import com.fluidframes.app.ui.SettingsScreen
+import com.fluidframes.enn.NpuDiagnostics
+import com.fluidframes.overlay.FluidSettings
+import com.fluidframes.overlay.SettingsStore
 
 /**
- * Luồng xin quyền:
- *  1. SYSTEM_ALERT_WINDOW (overlay)  -> màn hình Settings riêng
- *  2. POST_NOTIFICATIONS (Android 13+) -> không bắt buộc, từ chối vẫn chạy
- *  3. MediaProjection consent -> kết quả chuyển thẳng cho ProjectionService
+ * Luồng xin quyền: Trợ năng (bắt buộc) -> thông báo (Android 13+) -> ghi màn hình (chọn 1 app).
+ * Giao diện Compose theo tinh thần One UI (docs/DESIGN.md).
  */
 class MainActivity : ComponentActivity() {
 
-    private lateinit var status: TextView
+    private lateinit var store: SettingsStore
+    private var a11yOn by mutableStateOf(false)
+    private var notifOn by mutableStateOf(true)
+    private var settings by mutableStateOf(FluidSettings())
+    private var message by mutableStateOf("")
+    private var report by mutableStateOf<NpuDiagnostics.Report?>(null)
+    private var diagBusy by mutableStateOf(false)
 
     private val notificationLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // Từ chối notification không chặn FGS; đi tiếp bước ghi màn hình.
-            requestProjection()
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            notifOn = granted || Build.VERSION.SDK_INT < 33
+            // Từ chối thông báo không chặn FGS; đi tiếp bước ghi màn hình nếu người dùng đang bấm Bắt đầu.
+            if (pendingStart) { pendingStart = false; requestProjection() }
         }
+    private var pendingStart = false
 
     private val projectionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val data = result.data
             if (result.resultCode == Activity.RESULT_OK && data != null) {
-                ContextCompat.startForegroundService(
-                    this,
-                    ProjectionService.startIntent(this, result.resultCode, data),
-                )
-                status.text = "Đang chạy. Mở game; HUD hiện chữ là OK."
+                ContextCompat.startForegroundService(this, ProjectionService.startIntent(this, result.resultCode, data))
+                message = ""
             } else {
-                status.text = "Bạn đã từ chối quyền ghi màn hình"
+                message = "Bạn đã từ chối quyền ghi màn hình. Bấm Bắt đầu để thử lại."
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        store = SettingsStore(this)
+        settings = store.load()
+        refreshState()
 
-        status = TextView(this).apply {
-            text = "Sẵn sàng"
-            textSize = 13f
-            gravity = Gravity.START
-        }
-        val start = Button(this).apply {
-            text = "Bắt đầu"
-            setOnClickListener { onStartClicked() }
-        }
-        val a11y = Button(this).apply {
-            text = "Bật dịch vụ Trợ năng (overlay 100% mờ, cảm ứng xuyên qua)"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        }
-        val probe = Button(this).apply {
-            text = "Kiểm tra NPU (ENN)"
-            setOnClickListener { status.text = com.fluidframes.enn.NpuEnv.describe(this@MainActivity) + "\n\n" + com.fluidframes.enn.NpuProbe.run() ; android.util.Log.i("NpuProbe", status.text.toString()) }
-        }
-        val bench = Button(this).apply {
-            text = "Đo tốc độ NPU"
-            setOnClickListener {
-                status.text = "Đang đo..."
-                Thread {
-                    val r = com.fluidframes.enn.NpuEnv.benchmark(this@MainActivity)
-                    android.util.Log.i("NpuBench", r)
-                    runOnUiThread { status.text = r }
-                }.start()
+        setContent {
+            FluidTheme {
+                val running by ProjectionService.running.collectAsState()
+                val live by ProjectionService.live.collectAsState()
+                AppRoot(
+                    home = {
+                        HomeScreen(
+                            running = running, a11yOn = a11yOn, notifOn = notifOn, live = live, message = message,
+                            onStart = ::onStartClicked,
+                            onStop = { startService(ProjectionService.stopIntent(this)); message = "" },
+                            onOpenA11y = ::openAccessibility,
+                            onRequestNotif = { notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                        )
+                    },
+                    settings = {
+                        SettingsScreen(settings = settings, running = running) {
+                            settings = it
+                            store.save(it)
+                        }
+                    },
+                    npu = {
+                        NpuScreen(report = report, busy = diagBusy, onRun = ::runDiagnostics,
+                            onCopy = ::copyReport, onShare = ::shareReport)
+                    },
+                )
             }
         }
-        val stop = Button(this).apply {
-            text = "Dừng"
-            setOnClickListener { startService(ProjectionService.stopIntent(this@MainActivity)) ; status.text = "Đã dừng" }
-        }
+    }
 
-        setContentView(
-            android.widget.ScrollView(this).apply { addView(LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                setPadding(48, 48, 48, 48)
-                addView(status)
-                addView(a11y)
-                addView(start)
-                addView(probe)
-                addView(bench)
-                addView(stop)
-            }) },
-        )
+    override fun onResume() {
+        super.onResume()
+        refreshState()
+    }
+
+    private fun refreshState() {
+        a11yOn = OverlayAccessibilityService.instance != null
+        notifOn = Build.VERSION.SDK_INT < 33 ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (a11yOn && message.startsWith("Hãy bật")) message = ""
+    }
+
+    private fun openAccessibility() {
+        message = "Trong Trợ năng, chọn “FluidFrames overlay” rồi bật. Cài lại APK sẽ tự tắt dịch vụ này."
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
     }
 
     private fun onStartClicked() {
-        // Cần dịch vụ Trợ năng đang chạy HOẶC quyền SYSTEM_ALERT_WINDOW (phương án dự phòng, mờ 80%).
         if (OverlayAccessibilityService.instance == null) {
-            // Cài lại APK sẽ tự tắt dịch vụ Trợ năng: phải bật lại.
-            status.text = "Hãy bật dịch vụ Trợ năng \"FluidFrames overlay\" rồi bấm Bắt đầu lại"
+            message = "Hãy bật dịch vụ Trợ năng “FluidFrames overlay”, rồi quay lại bấm Bắt đầu."
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             return
         }
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
+            pendingStart = true
             notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             return
         }
@@ -119,12 +135,39 @@ class MainActivity : ComponentActivity() {
     private fun requestProjection() {
         val mpm = getSystemService(MediaProjectionManager::class.java)
         val intent = if (Build.VERSION.SDK_INT >= 34) {
-            // Android 14+: để người dùng chọn "Một ứng dụng" (game). Khi chỉ chụp 1 app, overlay của
-            // mình không nằm trong khung hình => hết lồng hình.
+            // Android 14+: chọn "Một ứng dụng" (game) để overlay của mình không nằm trong khung hình.
             mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForUserChoice())
         } else {
             mpm.createScreenCaptureIntent()
         }
         projectionLauncher.launch(intent)
+    }
+
+    private fun runDiagnostics() {
+        if (diagBusy) return
+        diagBusy = true
+        Thread {
+            val r = try {
+                NpuDiagnostics.run(this)
+            } catch (t: Throwable) {
+                NpuDiagnostics.Report(
+                    listOf(NpuDiagnostics.Row("Lỗi khi chẩn đoán", NpuDiagnostics.Level.FAIL, "${t.javaClass.simpleName}: ${t.message}")),
+                    null, false,
+                )
+            }
+            runOnUiThread { report = r; diagBusy = false }
+        }.start()
+    }
+
+    private fun copyReport() {
+        val text = report?.toText() ?: return
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("FluidFrames NPU", text))
+        Toast.makeText(this, "Đã sao chép báo cáo", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun shareReport() {
+        val text = report?.toText() ?: return
+        startActivity(Intent.createChooser(
+            Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Chia sẻ báo cáo NPU"))
     }
 }
