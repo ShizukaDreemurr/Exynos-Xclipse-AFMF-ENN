@@ -164,6 +164,18 @@ class FramePipeline(
         }
     }
 
+    /** Chỉ present frame thật, giữ overlay (dùng khi pipeline đang chậm/thiếu frame liền kề). */
+    private fun presentOnly(cur: FrameSlot) {
+        passthroughStreak = 0
+        setOverlay(true)
+        if (native.procW == 0) {
+            val (w, h) = NativePipeline.procSize(ProcTier.P540.longSide, cur.width, cur.height)
+            native.configure(w, h)
+        }
+        stats.framesPassthrough.incrementAndGet()
+        if (native.presentReal(cur.hardwareBuffer)) stats.outFps.tick() else lastError = native.lastError()
+    }
+
     private fun passthrough(cur: FrameSlot) {
         lastMode = Mode.PASSTHROUGH
         stats.framesPassthrough.incrementAndGet()
@@ -243,6 +255,9 @@ class FramePipeline(
         }
 
         if (System.nanoTime() < holdOffUntilNs) return
+        // Đang tụt lại (đã có frame mới hơn chờ sẵn) hoặc frame trước không liền kề (bị bỏ):
+        // nội suy lúc này vừa trễ vừa sai chuyển động, và làm pipeline chậm thêm. Chỉ present frame thật.
+        if (ring.pushed.get() > cur.seq || prev.seq != cur.seq - 1) { presentOnly(cur); return }
         passthroughStreak = 0
         setOverlay(true)
 

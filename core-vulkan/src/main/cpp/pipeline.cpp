@@ -894,9 +894,9 @@ bool Pipeline::Finish(bool interp, bool nnFlowReady, float gapMs) {
     if (interp) {
         ok = OutPass(1, nnFlowReady, /*acquire=*/false, /*release=*/false);
         // Nhịp present: frame thật cách frame nội suy đúng nửa chu kỳ nguồn.
-        if (gapMs > 0.5f && gapMs < 60.f) {
-            std::this_thread::sleep_for(std::chrono::microseconds(static_cast<int64_t>(gapMs * 1000.f)));
-        }
+        // Không sleep: swapchain FIFO tự cách hai lần present đúng 1 vsync (= nửa chu kỳ khi màn gấp đôi nguồn).
+        // Sleep cộng dồn với chờ vsync làm pipeline chậm và tụt fps.
+        (void)gapMs;
     }
     const bool ok2 = OutPass(0, false, /*acquire=*/false, /*release=*/true);
     stats_[7] = static_cast<float>(presentWaitMs_);
