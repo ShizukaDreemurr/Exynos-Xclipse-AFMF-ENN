@@ -47,6 +47,7 @@ class ProjectionService : Service() {
     private var overlay: OverlayManager? = null
     private var pipeline: FramePipeline? = null
     private val main = Handler(Looper.getMainLooper())
+    private val sysLoad = SysLoad()
     private val hudTick = object : Runnable {
         override fun run() {
             pipeline?.let {
@@ -57,6 +58,7 @@ class ProjectionService : Service() {
                     val pw = powerLine()
                     if (pw.isNotEmpty()) txt = if (txt.isEmpty()) pw else txt + "\n" + pw
                 }
+                if (mask and com.fluidframes.overlay.HudLines.LOAD != 0) txt = if (txt.isEmpty()) sysLoad.line() else txt + "\n" + sysLoad.line()
                 overlay?.setHudText(txt); live.value = it.live()
             }
             main.postDelayed(this, 500)

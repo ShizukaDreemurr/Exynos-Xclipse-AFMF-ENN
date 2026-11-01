@@ -46,7 +46,8 @@ object HudLines {
     const val CAPTURE = 128
     const val POWER = 256
     const val ERROR = 512
-    const val ALL = 1023 and CAPTURE.inv() and LOOP.inv()   // mặc định gọn: bỏ dòng kỹ thuật (chờ/process và capture)
+    const val LOAD = 1024
+    const val ALL = 2047 and CAPTURE.inv() and LOOP.inv()   // mặc định gọn: bỏ dòng kỹ thuật (chờ/process và capture)
 }
 
 class SettingsStore(context: Context) {

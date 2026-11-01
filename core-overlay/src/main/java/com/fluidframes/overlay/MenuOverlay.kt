@@ -245,6 +245,7 @@ class MenuOverlay(
             HudLines.WORK to "Dòng: work, drop, skip, nhiệt",
             HudLines.CAPTURE to "Dòng: capture, stalls",
             HudLines.POWER to "Dòng: pin %, nhiệt pin, công suất (W)",
+            HudLines.LOAD to "Dòng: CPU / GPU % và MHz",
             HudLines.ERROR to "Dòng: lỗi (nếu có)",
         )
         val TIERS = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360)

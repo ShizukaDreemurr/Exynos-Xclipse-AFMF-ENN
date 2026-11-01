@@ -208,8 +208,11 @@ object TelemetryRecorder {
         if (!procStatOk) unreadable += "Tải CPU toàn máy (/proc/stat)"
     }
 
+    private val sysLoad = com.fluidframes.app.SysLoad()
+
     private fun sample(now: Long): LinkedHashMap<String, Any?> {
         val m = LinkedHashMap<String, Any?>()
+        m.putAll(sysLoad.columns())
         m["t_s"] = ((now - t0) / 1000.0)
         m["gio"] = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(wall0 + (now - t0)))
         synchronized(lock) { m["app_truoc"] = fgPkg; m["app_muc_tieu_truoc"] = if (fgPkg == target) 1 else 0 }
