@@ -13,6 +13,7 @@ internal object NativeBridge {
 
     @JvmStatic external fun nativeCreate(assets: AssetManager): Long
     @JvmStatic external fun nativeCreateError(): String
+    @JvmStatic external fun nativeEnnPerf(mode: Int): String
     @JvmStatic external fun nativeDestroy(handle: Long)
     @JvmStatic external fun nativeSetSurface(handle: Long, surface: Surface?): Boolean
     @JvmStatic external fun nativeSetTune(handle: Long, staticThr: Float, occThr: Float, flags: Int)

@@ -145,6 +145,10 @@ class MenuOverlay(
         col.addView(ui.dropdown(listOf("Tự động (INT8→FP16→FP32)", "INT8", "FP16", "FP32"), settings.npuPrecision.coerceIn(0, 3)) {
             settings = settings.copy(npuPrecision = it); onChange(settings)
         })
+        col.addView(ui.caption("Điện NPU (Tiết kiệm = hạ xung NPU, ít điện hơn, hơi chậm hơn)"))
+        col.addView(ui.segmented(listOf("Mặc định", "Cân bằng", "Tiết kiệm"), settings.npuPower.coerceIn(0, 2)) {
+            settings = settings.copy(npuPower = it); onChange(settings)
+        })
         col.addView(ui.caption("Công cụ tính flow"))
         col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
             settings = settings.copy(backend = BACKENDS[it]); onChange(settings)

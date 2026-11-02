@@ -17,6 +17,8 @@ data class FluidSettings(
     val outLongSide: Int = 0,
     /** Luôn nội suy: bỏ qua guard tần số quét (không tự trả game về passthrough). */
     val alwaysInterp: Boolean = false,
+    /** Chế độ điện NPU: 0 mặc định LiteRT (tối đa) | 1 cân bằng | 2 tiết kiệm. */
+    val npuPower: Int = 0,
     val npuPrecision: Int = 0,   // 0 tự động (INT8>FP16>FP32) | 1 INT8 | 2 FP16 | 3 FP32
     /** Độ nhạy chuyển động: 0 thấp (an toàn) | 1 vừa | 2 cao (tin flow hơn). */
     val sensitivity: Int = 1,
@@ -64,6 +66,7 @@ class SettingsStore(context: Context) {
         outLongSide = prefs.getInt("outres", 0),
         alwaysInterp = prefs.getBoolean("always", false),
         npuPrecision = prefs.getInt("npuprec", 0),
+        npuPower = prefs.getInt("npupow", 0),
         sensitivity = prefs.getInt("sens", 1),
         hudProtect = prefs.getBoolean("hudprot", true),
         onlyEnabledApps = prefs.getBoolean("onlyapps", true),
@@ -85,6 +88,7 @@ class SettingsStore(context: Context) {
             .putInt("outres", s.outLongSide)
             .putBoolean("always", s.alwaysInterp)
             .putInt("npuprec", s.npuPrecision)
+            .putInt("npupow", s.npuPower)
             .putInt("sens", s.sensitivity)
             .putBoolean("hudprot", s.hudProtect)
             .putBoolean("onlyapps", s.onlyEnabledApps)

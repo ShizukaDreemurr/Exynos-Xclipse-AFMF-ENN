@@ -14,4 +14,5 @@ target_compile_options(fluidframes_native PRIVATE -Wall -Wextra -Wno-unused-para
 target_link_libraries(fluidframes_native
     vulkan
     android
+    dl
     log)

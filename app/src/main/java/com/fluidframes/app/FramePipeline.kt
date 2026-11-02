@@ -112,6 +112,7 @@ class FramePipeline(
         }
         if (on(4)) lines += r("Tần số quét", "%.0fHz".format(curHz()), "")
         if (on(8)) lines += r("Backend", backendLabel + if (overlayShown) "" else " (overlay tắt)", if (backendLabel.contains("NPU", true)) G else "")
+        if (on(8) && ennPerfNote.isNotEmpty()) lines += r("Điện NPU", ennPerfNote, "")
         if (on(16) && lastMode == Mode.FLOW_NN) (backend as? com.fluidframes.enn.LiteRtBackend)?.let {
             lines += r("NPU vào/chạy/ra ms", "%.1f/%.1f/%.1f".format(it.copyInMs, it.runMs, it.copyOutMs), if (it.runMs + it.copyInMs + it.copyOutMs < 1000f / src.coerceAtLeast(20f)) G else Y)
         }
@@ -412,6 +413,19 @@ class FramePipeline(
         }
     }
 
+    private var appliedPow = -1
+    @Volatile private var ennPerfNote = ""
+    /** Hạ/đặt chế độ điện NPU sau khi model đã nạp (dispatch tự ép tối đa mỗi lần khởi tạo). */
+    private fun applyEnnPower(st: com.fluidframes.overlay.FluidSettings) {
+        val b = backend as? com.fluidframes.enn.LiteRtBackend
+        if (b == null || !b.onNpu) { appliedPow = -1; ennPerfNote = ""; return }
+        if (appliedPow == st.npuPower) return
+        appliedPow = st.npuPower
+        if (st.npuPower == 0) { ennPerfNote = "mặc định"; return }
+        val mode = if (st.npuPower == 1) 4 else 0
+        ennPerfNote = (if (st.npuPower == 1) "cân bằng " else "tiết kiệm ") + native.ennPerf(mode)
+    }
+
     private fun ensureBackend(choice: FlowBackend, longSide: Int, procW: Int, procH: Int): Boolean {
         if (choice != backendChoice || backendLoadedFor != longSide || backendPrec != wantPrec) nnDrain()
         if (choice != backendChoice) {
@@ -432,6 +446,7 @@ class FramePipeline(
             }
             backendLoadedFor = longSide
             backendPrec = wantPrec
+            appliedPow = -1   // model mới nạp: dispatch đã đặt lại chế độ điện, đặt lại theo cài đặt
         }
         backendLabel = b.name
         return true
@@ -449,6 +464,7 @@ class FramePipeline(
     private fun process(prev: FrameSlot?, cur: FrameSlot) {
         val st = settings()
         applyTune(st)
+        applyEnnPower(st)
         if (st.npuPrecision != wantPrec) { wantPrec = st.npuPrecision; failLong = 0 }
         // Chỉ nội suy app đã bật. Chưa nhận ra app (chưa bật Trợ năng) thì cứ nội suy như cũ.
         if (st.onlyEnabledApps) {

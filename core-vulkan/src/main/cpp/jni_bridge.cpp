@@ -2,6 +2,8 @@
 #include <android/hardware_buffer_jni.h>
 #include <android/native_window_jni.h>
 #include <jni.h>
+#include <dlfcn.h>
+#include <cstdint>
 
 #include <memory>
 #include <mutex>
@@ -30,6 +32,19 @@ FN(jlong, nativeCreate)(JNIEnv* env, jclass, jobject assetManager) {
         return 0;
     }
     return reinterpret_cast<jlong>(p.release());
+}
+
+// Đặt chế độ hiệu năng/điện của NPU Samsung (ENN): 0 LOW_POWER, 4 BALANCED, 7 PERFORMANCE.
+// LiteRT dispatch tự ép PERFORMANCE cho Exynos 2600 (9965); gọi lại sau khi nạp model để hạ xung.
+FN(jstring, nativeEnnPerf)(JNIEnv* env, jclass, jint mode) {
+    void* lib = dlopen("libenn_public_api_cpp.so", RTLD_NOW);
+    if (!lib) { std::string m = std::string("không mở được libenn: ") + (dlerror() ? dlerror() : ""); return env->NewStringUTF(m.c_str()); }
+    using Fn = int (*)(uint32_t);
+    auto fn = reinterpret_cast<Fn>(dlsym(lib, "EnnSetPreferencePerfMode"));
+    if (!fn) return env->NewStringUTF("không có EnnSetPreferencePerfMode");
+    int ret = fn(static_cast<uint32_t>(mode));
+    std::string m = "mode=" + std::to_string(mode) + " ret=" + std::to_string(ret);
+    return env->NewStringUTF(m.c_str());
 }
 
 FN(jstring, nativeCreateError)(JNIEnv* env, jclass) {
