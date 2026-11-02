@@ -44,7 +44,7 @@ def build_probe(nchw, n=64):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sizes", default="640x288,960x416,1280x576")
+    ap.add_argument("--sizes", default="320x128,384x160,480x192,640x288,960x416,1280x576")
     ap.add_argument("--out", default="out_models")
     ap.add_argument("--compile", action="store_true")
     ap.add_argument("--ifr", default="", help="checkpoint IFRNet-S .pth: dùng flow thô của IFRNet thay model ngẫu nhiên")

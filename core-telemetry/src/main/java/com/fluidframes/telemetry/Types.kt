@@ -12,6 +12,9 @@ enum class ProcTier(val label: String, val longSide: Int) {
     P720("720p", 1280),
     P540("540p", 960),
     P360("360p", 640),
+    P270("200p", 480),
+    P216("160p", 384),
+    P180("130p", 320),
 }
 
 enum class FlowBackend(val label: String) {

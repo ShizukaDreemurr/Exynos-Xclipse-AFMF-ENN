@@ -20,7 +20,7 @@ import com.fluidframes.overlay.FluidSettings
 import com.fluidframes.telemetry.FlowBackend
 import com.fluidframes.telemetry.ProcTier
 
-private val tiers = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360)
+private val tiers = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360, ProcTier.P270, ProcTier.P216, ProcTier.P180)
 private val tierLabels = listOf("Mặc định", "720p", "540p", "360p")
 private val backends = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
 private val backendLabels = listOf("Tự động", "NPU", "GPU", "Tắt")
