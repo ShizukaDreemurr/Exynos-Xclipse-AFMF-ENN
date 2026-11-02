@@ -43,6 +43,14 @@ object NpuDiagnostics {
         val hasDispatch = bundled.any { it.contains("Dispatch_Samsung") }
         rows += Row("Dispatch Samsung trong APK", if (hasDispatch) Level.OK else Level.FAIL, bundled.joinToString())
 
+        // 2b. API TensorBuffer thật của LiteRT trong APK (để biết có ghi/đọc thẳng ByteBuffer, khóa bộ nhớ, AHardwareBuffer…)
+        try {
+            val ms = Class.forName("com.google.ai.edge.litert.TensorBuffer").methods
+                .filter { it.declaringClass.name.startsWith("com.google") }
+                .map { it.name + "(" + it.parameterTypes.joinToString(",") { p -> p.simpleName } + ")" }.distinct().sorted()
+            rows += Row("API TensorBuffer", Level.INFO, ms.joinToString("; "))
+        } catch (t: Throwable) { rows += Row("API TensorBuffer", Level.WARN, t.javaClass.simpleName) }
+
         // 3. Accelerator
         val env = NpuEnv.create(context, NpuEnv.EnvMode.DISPATCH_ONLY)
         val accs = NpuEnv.accelerators(env)

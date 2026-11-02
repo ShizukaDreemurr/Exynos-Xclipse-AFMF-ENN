@@ -23,6 +23,22 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
     private var usedNpu = false
 
     /** Thời gian từng đoạn trong run() (EMA, ms) để biết chi phí chép dữ liệu so với NPU chạy thật. */
+    // Đường nhanh (nếu thư viện có): ghi/đọc thẳng Direct ByteBuffer, bỏ qua FloatArray của JVM. Dò bằng reflection nên không làm hỏng build.
+    private var fastW: java.lang.reflect.Method? = null
+    private var fastR: java.lang.reflect.Method? = null
+    private var fastChecked = false
+    @Volatile var fastNote = ""; private set
+    private fun probeFast() {
+        val ms = inBufs.firstOrNull()?.javaClass?.methods ?: return
+        fun find(n: String) = ms.firstOrNull { it.name == n && it.parameterTypes.isNotEmpty() && it.parameterTypes[0] == ByteBuffer::class.java }
+        fastW = find("writeBuffer"); fastR = find("readBuffer"); fastChecked = false
+        fastNote = "writeBuffer=${fastW != null} readBuffer=${fastR != null}"
+    }
+    private fun callFast(m: java.lang.reflect.Method, tb: Any, bb: ByteBuffer) {
+        bb.position(0)
+        if (m.parameterTypes.size >= 2) m.invoke(tb, bb, 0) else m.invoke(tb, bb)
+    }
+
     @Volatile var copyInMs = 0f; private set
     @Volatile var runMs = 0f; private set
     @Volatile var copyOutMs = 0f; private set
@@ -36,7 +52,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
 
     @Volatile private var loadedPrec = "FP32"
     override var precision: Int = 0
-    override val name: String get() = if (usedNpu) "NPU Exynos $loadedPrec" else "—"
+    override val name: String get() = if (usedNpu) "NPU Exynos $loadedPrec" + (if (fastW != null) " direct" else "") else "—"
     override val onNpu: Boolean get() = usedNpu
 
     override fun load(longSide: Int, procW: Int, procH: Int): Boolean {
@@ -68,6 +84,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
                 inArr = FloatArray(6 * procW * procH)
                 outArr = FloatArray(5 * (procW / 2) * (procH / 2))
                 usedNpu = true
+                probeFast()
                 usedStrategy = s
                 loadedPrec = when (suf) { "int8" -> "INT8"; "fp16" -> "FP16"; else -> "FP32" }
                 prefs.edit().putString("strategy", s.id).apply()
@@ -88,19 +105,48 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
         return try {
             val t0 = System.nanoTime()
             stage = "đọc input"
-            input.position(0)
-            input.asFloatBuffer().get(inArr)
-            stage = "ghi vào buffer NPU"
-            inBufs[0].writeFloat(inArr)
-            val t1 = System.nanoTime()
-            stage = "chạy model"
-            m.run(inBufs, outBufs)
-            val t2 = System.nanoTime()
-            stage = "đọc output"
-            outArr = outBufs[0].readFloat()
-            stage = "chép output"
-            output.position(0)
-            output.asFloatBuffer().put(outArr)
+            var t1 = 0L
+            var t2 = 0L
+            val fw = fastW; val fr = fastR
+            var fastDone = false
+            if (fw != null && fr != null) try {
+                stage = "ghi buffer (direct)"
+                callFast(fw, inBufs[0], input)
+                if (!fastChecked) {   // lần đầu: kiểm chứng kết quả giống đường FloatArray, sai thì tắt đường nhanh
+                    input.position(0); val fb = input.asFloatBuffer(); val probe = FloatArray(minOf(256, fb.remaining())); fb.get(probe)
+                    val back = inBufs[0].readFloat()
+                    var ok = back.size >= probe.size
+                    if (ok) for (i in probe.indices) if (kotlin.math.abs(back[i] - probe[i]) > 1e-4f) { ok = false; break }
+                    fastChecked = true
+                    if (!ok) { fastW = null; fastR = null; fastNote += " (kiểm chứng sai → tắt)"; lastRunError = ""; return run(input, output) }
+                    fastNote += " (đã kiểm chứng)"
+                }
+                t1 = System.nanoTime()
+                stage = "chạy model"
+                m.run(inBufs, outBufs)
+                t2 = System.nanoTime()
+                stage = "đọc buffer (direct)"
+                callFast(fr, outBufs[0], output)
+                fastDone = true
+            } catch (e: Throwable) {
+                fastW = null; fastR = null; fastNote += " (lỗi đường nhanh → tắt: ${e.javaClass.simpleName} ${(e.cause?.message ?: e.message ?: "").take(80)})"
+                return run(input, output)
+            }
+            if (!fastDone) {
+                input.position(0)
+                input.asFloatBuffer().get(inArr)
+                stage = "ghi vào buffer NPU"
+                inBufs[0].writeFloat(inArr)
+                t1 = System.nanoTime()
+                stage = "chạy model"
+                m.run(inBufs, outBufs)
+                t2 = System.nanoTime()
+                stage = "đọc output"
+                outArr = outBufs[0].readFloat()
+                stage = "chép output"
+                output.position(0)
+                output.asFloatBuffer().put(outArr)
+            }
             val t3 = System.nanoTime()
             copyInMs = copyInMs * 0.85f + (t1 - t0) / 1e6f * 0.15f
             runMs = runMs * 0.85f + (t2 - t1) / 1e6f * 0.15f
