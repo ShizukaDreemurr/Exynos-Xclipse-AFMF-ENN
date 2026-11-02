@@ -52,7 +52,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
         }
         val files = order0.mapNotNull { suf ->
             val p = if (suf.isEmpty()) "models/flow_$longSide.tflite" else "models/flow_${longSide}_$suf.tflite"
-            if (try { context.assets.open(p).close(); true } catch (_: Throwable) { false }) suf to p else null
+            if (try { context.assets.open(p).use { it.available() > 2048 } } catch (_: Throwable) { false }) suf to p else null
         }
         if (files.isEmpty()) { lastError = "không có model nào cho $longSide\n"; return false }
         val prefs = context.getSharedPreferences("npu", Context.MODE_PRIVATE)

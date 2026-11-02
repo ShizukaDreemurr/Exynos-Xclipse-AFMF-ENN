@@ -45,6 +45,7 @@ jobs:
             mkdir -p app/src/main/assets/models
             git archive FETCH_HEAD models | tar -x -C /tmp
             cp /tmp/models/*.tflite app/src/main/assets/models/
+            find app/src/main/assets/models -name '*.tflite' -size -2k -delete   # bỏ file rỗng (AOT một phần)
             ls -la app/src/main/assets/models
           fi
 
