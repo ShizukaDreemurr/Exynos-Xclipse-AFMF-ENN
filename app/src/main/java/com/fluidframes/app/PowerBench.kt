@@ -21,6 +21,8 @@ class PowerBench {
     @Volatile var forced: FlowBackend? = null; private set
     @Volatile var status = ""; private set
     @Volatile var result = ""; private set
+    /** Gọi một lần khi đo xong (để lưu file). */
+    var onDone: ((String) -> Unit)? = null
 
     fun start(nowMs: Long, tempC: Float) {
         for (a in acc.values) { a.n = 0; a.w = 0.0; a.t = 0.0; a.fps = 0.0; a.ma = 0.0 }
@@ -57,12 +59,13 @@ class PowerBench {
             val a = acc.getValue(b); if (a.n == 0) continue
             val w = a.w / a.n
             if (b == FlowBackend.OFF) base = w
-            sb.append("${label(b)}: %.2f W | %.0f mA | %.1f°C | %.0f fps".format(w, a.ma / a.n, a.t / a.n, a.fps / a.n))
-            if (b != FlowBackend.OFF && base > 0) sb.append(" | +%.2f W so với Tắt".format(w - base))
+            sb.append("${label(b)}: %.2f W | %.0f mA | %.1f°C | %.0f fps".format(java.util.Locale.US, w, a.ma / a.n, a.t / a.n, a.fps / a.n))
+            if (b != FlowBackend.OFF && base > 0) sb.append(" | +%.2f W so với Tắt".format(java.util.Locale.US, w - base))
             sb.append('\n')
         }
-        sb.append("Pin nóng thêm %.1f°C trong lúc đo".format(lastTemp - temp0))
+        sb.append("Pin nóng thêm %.1f°C trong lúc đo".format(java.util.Locale.US, lastTemp - temp0))
         result = sb.toString()
+        onDone?.invoke(result)
     }
 
     private var lastTemp = 0f

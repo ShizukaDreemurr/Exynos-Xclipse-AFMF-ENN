@@ -104,6 +104,7 @@ object TelemetryRecorder {
         "com.android.systemui", "com.samsung.android.game.gametools", "com.samsung.android.app.smartcapture",
         "com.samsung.android.sidegesturepad", "com.samsung.android.app.cocktailbarservice",
         "com.samsung.android.game.gamehome", "com.samsung.android.app.taskedge",
+        "com.samsung.android.app.peoplestripe", "com.samsung.android.app.routines", "com.samsung.android.honeyboard",
     )
 
     fun attach(context: Context) { if (ownPkg.isEmpty()) ownPkg = context.packageName }
@@ -122,8 +123,24 @@ object TelemetryRecorder {
         return true
     }
 
-    fun onForeground(pkg: String) {
-        if (ownPkg.isNotEmpty() && pkg != ownPkg && pkg !in ignoredFg &&
+    /** Lưu kết quả Đo điện thành file .csv trong Download/XclipseENN-SS (và ghi vào Sự kiện nếu đang đo log). */
+    fun saveBench(app: String, text: String): String = try {
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+        val csv = StringBuilder("\uFEFFche_do,cong_suat_W,dong_mA,nhiet_pin_C,fps_ra,so_mau\r\n")
+        text.lines().filter { it.contains(" W |") }.forEach { l ->
+            val name = l.substringBefore(":").trim()
+            val n = Regex("([0-9.]+) W \\| ([0-9.]+) mA \\| ([0-9.]+)°C \\| ([0-9.]+) fps").find(l)?.groupValues
+            if (n != null) csv.append("$name,${n[1]},${n[2]},${n[3]},${n[4]},\r\n")
+        }
+        csv.append("app,${csvCell(app)},,,,\r\n")
+        if (isRecording) event("Đo điện", text.replace('\n', ' '))
+        save("ENN-SS_DoDien_$stamp.csv", "text/csv", csv.toString().toByteArray(Charsets.UTF_8)).name
+    } catch (t: Throwable) { "" }
+
+    fun onForeground(pkg: String, cls: String = "") {
+        // Panel cạnh/popup của hệ thống không phải Activity => không coi là app đang ở trước.
+        val isActivity = cls.isEmpty() || cls.contains("Activity") || cls.contains("Game")
+        if (ownPkg.isNotEmpty() && pkg != ownPkg && pkg !in ignoredFg && isActivity &&
             !pkg.contains("inputmethod") && !pkg.contains("keyboard")) lastFg = pkg
         if (!isRecording) return
         if (pkg == app.packageName || pkg == "com.android.systemui" ||

@@ -85,7 +85,13 @@ class ProjectionService : Service() {
         Pw(lvl, tmp, kotlin.math.abs(ma), kotlin.math.abs(ma) * mv / 1_000_000f, plugged)
     } catch (_: Throwable) { null }
 
-    val bench = PowerBench()
+    val bench = PowerBench().also { b ->
+        b.onDone = { txt ->
+            val fg = com.fluidframes.app.telemetry.TelemetryRecorder.foreground()
+            val f = com.fluidframes.app.telemetry.TelemetryRecorder.saveBench(fg, txt)
+            main.post { Toast.makeText(this, if (f.isNotEmpty()) "Đo điện xong. Đã lưu $f trong Download/XclipseENN-SS" else "Đo điện xong (không lưu được file).", Toast.LENGTH_LONG).show() }
+        }
+    }
 
     /** Bấm nút "Đo điện": bắt đầu / hủy. Trả lời nhắn cho Toast. */
     private fun benchToggle(): String {
