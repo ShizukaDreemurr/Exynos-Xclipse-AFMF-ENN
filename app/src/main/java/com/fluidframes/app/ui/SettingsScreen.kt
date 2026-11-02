@@ -140,12 +140,12 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("Overlay xin hệ thống chạy đúng tần số này, và (nếu đã cấp quyền bên dưới) ép luôn trên toàn hệ thống trong lúc dịch vụ chạy. " +
-                    "Game hoặc Game Booster của Samsung vẫn có thể từ chối nếu không có quyền ép.",
+                    "Nếu game kéo màn hình về 60Hz, app tự ép lại liên tục (xem dòng Ép Hz trên HUD).",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
                 Spacer(Modifier.height(10.dp))
                 val ctx = LocalContext.current
                 val canWrite = Settings.System.canWrite(ctx)
-                Text(if (canWrite) "Quyền sửa cài đặt hệ thống: ĐÃ CẤP. Khi dịch vụ chạy, app đặt tần số quét tối thiểu/tối đa theo mục trên (và trả lại khi dừng). Game Booster/GOS của Samsung vẫn có thể ghi đè."
+                Text(if (canWrite) "Quyền sửa cài đặt hệ thống: ĐÃ CẤP. Khi dịch vụ chạy, app đặt tần số quét tối thiểu/tối đa theo mục trên (và trả lại khi dừng)."
                     else "Quyền sửa cài đặt hệ thống: CHƯA CẤP.",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
                 if (!canWrite) {
