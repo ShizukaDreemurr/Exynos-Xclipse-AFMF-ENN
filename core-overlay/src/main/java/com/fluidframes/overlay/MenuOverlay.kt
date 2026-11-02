@@ -150,6 +150,10 @@ class MenuOverlay(
         col.addView(ui.segmented(listOf("Gốc", "1920", "1560", "1280"), outOpts.indexOf(settings.outLongSide).coerceAtLeast(0)) {
             settings = settings.copy(outLongSide = outOpts[it]); onChange(settings)
         })
+        col.addView(ui.caption("Upscale NPU ×2: chụp nửa độ phân giải rồi NPU phóng gấp đôi + làm nét. Hợp game 30 fps (nguồn >50 fps tự tắt)"))
+        col.addView(ui.segmented(listOf("Tắt", "×2"), settings.upscale.coerceIn(0, 1)) {
+            settings = settings.copy(upscale = it); onChange(settings)
+        })
         col.addView(ui.caption("Điện NPU (Tiết kiệm = hạ xung NPU, ít điện hơn, hơi chậm hơn)"))
         col.addView(ui.segmented(listOf("Mặc định", "Cân bằng", "Tiết kiệm"), settings.npuPower.coerceIn(0, 2)) {
             settings = settings.copy(npuPower = it); onChange(settings)

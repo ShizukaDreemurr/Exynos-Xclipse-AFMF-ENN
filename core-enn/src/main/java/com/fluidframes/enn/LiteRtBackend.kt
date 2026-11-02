@@ -99,7 +99,9 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
         return false
     }
 
-    override fun run(input: ByteBuffer, output: ByteBuffer): Float {
+    override fun run(input: ByteBuffer, output: ByteBuffer): Float = synchronized(NpuEnv.npuLock) { runLocked(input, output) }
+
+    private fun runLocked(input: ByteBuffer, output: ByteBuffer): Float {
         val m = model ?: return -1f
         var stage = "chuẩn bị"
         return try {

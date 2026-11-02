@@ -145,3 +145,32 @@ FN(void, nativeStats)(JNIEnv* env, jclass, jlong h, jfloatArray out) {
 FN(jstring, nativeLastError)(JNIEnv* env, jclass, jlong h) {
     return env->NewStringUTF(P(h)->LastError().c_str());
 }
+
+FN(jboolean, nativeSrInit)(JNIEnv* env, jclass, jlong h, jobject assetManager, jint w, jint hh,
+                           jfloat inScale, jint inZp, jfloat outScale, jint outZp) {
+    AAssetManager* am = AAssetManager_fromJava(env, assetManager);
+    return P(h)->SrInit(am, w, hh, inScale, inZp, outScale, outZp) ? JNI_TRUE : JNI_FALSE;
+}
+
+FN(jobject, nativeSrIn)(JNIEnv* env, jclass, jlong h) {
+    size_t n = 0;
+    uint8_t* p = P(h)->SrIn(&n);
+    return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
+}
+
+FN(jobject, nativeSrOut)(JNIEnv* env, jclass, jlong h) {
+    size_t n = 0;
+    uint8_t* p = P(h)->SrOut(&n);
+    return p ? env->NewDirectByteBuffer(p, static_cast<jlong>(n)) : nullptr;
+}
+
+FN(jboolean, nativeSrPre)(JNIEnv* env, jclass, jlong h, jobject lr) {
+    AHardwareBuffer* a = AHardwareBuffer_fromHardwareBuffer(env, lr);
+    return (a && P(h)->SrPre(a)) ? JNI_TRUE : JNI_FALSE;
+}
+
+FN(jboolean, nativeSrPost)(JNIEnv* env, jclass, jlong h, jobject lr, jobject token, jint slot) {
+    AHardwareBuffer* a = AHardwareBuffer_fromHardwareBuffer(env, lr);
+    AHardwareBuffer* t = AHardwareBuffer_fromHardwareBuffer(env, token);
+    return (a && t && P(h)->SrPost(a, t, slot)) ? JNI_TRUE : JNI_FALSE;
+}

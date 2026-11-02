@@ -121,6 +121,14 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
             }
 
             FFCard {
+                SectionTitle("Upscale NPU")
+                Segmented(listOf("Tắt", "×2"), settings.upscale.coerceIn(0, 1)) { onChange(settings.copy(upscale = it)) }
+                Spacer(Modifier.height(10.dp))
+                Text("×2: app chụp màn hình ở NỬA độ phân giải máy (1170×540), NPU phóng gấp đôi lên 2340×1080 và làm nét, rồi mới nội suy. " +
+                    "Model được huấn luyện riêng, hơn phóng to thường khoảng 4,6 dB (đo trên video game). Hợp game 30 fps; nguồn trên 50 fps tự tắt.",
+                    style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
+            }
+            FFCard {
                 SectionTitle("Độ phân giải hình xuất")
                 val outOpts = listOf(0, 1920, 1560, 1280)
                 Segmented(listOf("Gốc", "1920", "1560", "1280"), outOpts.indexOf(settings.outLongSide).coerceAtLeast(0)) {

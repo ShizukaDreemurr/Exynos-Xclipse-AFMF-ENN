@@ -1,0 +1,35 @@
+#version 450
+// SR bước 1: đọc ảnh chụp (LR, RGBA8) -> xếp thành tensor int8 NCHW [1,3,lrH,lrW] cho NPU.
+// Mỗi invocation ghi 1 từ 32-bit (4 byte liên tiếp trong tensor) nên không có tranh chấp ghi byte.
+layout(local_size_x = 64) in;
+
+layout(set = 0, binding = 0) uniform sampler2D uLr;
+layout(set = 0, binding = 4) buffer SrIn { uint q[]; };
+
+layout(push_constant) uniform PC {
+    int lrW, lrH, hrW, hrH;
+    int words; int pad0;
+    float inScale; float outScale;
+    int inZp; int outZp;
+    int p1, p2, p3, p4, p5, p6;
+} pc;
+
+void main() {
+    int wi = int(gl_GlobalInvocationID.x);
+    if (wi >= pc.words) return;
+    int plane = pc.lrW * pc.lrH;
+    uint word = 0u;
+    for (int b = 0; b < 4; ++b) {
+        int idx = wi * 4 + b;
+        if (idx >= 3 * plane) break;
+        int c = idx / plane;
+        int rem = idx - c * plane;
+        int y = rem / pc.lrW;
+        int x = rem - y * pc.lrW;
+        vec3 v = texelFetch(uLr, ivec2(x, y), 0).rgb;
+        float s = (c == 0) ? v.r : ((c == 1) ? v.g : v.b);
+        int qv = clamp(int(floor(s / pc.inScale + 0.5)) + pc.inZp, -128, 127);
+        word |= (uint(qv) & 0xFFu) << uint(8 * b);
+    }
+    q[wi] = word;
+}

@@ -8,6 +8,8 @@ import com.fluidframes.capture.FrameRingBuffer
 import com.fluidframes.capture.FrameSlot
 import com.fluidframes.enn.BackendFactory
 import com.fluidframes.enn.InferenceBackend
+import com.fluidframes.enn.SrBackend
+import android.hardware.HardwareBuffer
 import com.fluidframes.overlay.FluidSettings
 import com.fluidframes.telemetry.FlowBackend
 import com.fluidframes.telemetry.Governor
@@ -112,6 +114,7 @@ class FramePipeline(
         }
         if (on(4)) lines += r("Tần số quét", "%.0fHz".format(curHz()), "")
         if (on(8)) lines += r("Backend", backendLabel + if (overlayShown) "" else " (overlay tắt)", if (backendLabel.contains("NPU", true)) G else "")
+        if (on(8) && srNote.isNotEmpty()) lines += r("Upscale", srNote, if (srActive) G else Y)
         if (on(8) && ennPerfNote.isNotEmpty()) lines += r("Điện NPU", ennPerfNote, "")
         if (on(16) && lastMode == Mode.FLOW_NN) (backend as? com.fluidframes.enn.LiteRtBackend)?.let {
             lines += r("NPU vào/chạy/ra ms", "%.1f/%.1f/%.1f".format(it.copyInMs, it.runMs, it.copyOutMs), if (it.runMs + it.copyInMs + it.copyOutMs < 1000f / src.coerceAtLeast(20f)) G else Y)
@@ -360,11 +363,11 @@ class FramePipeline(
         if (nnPermits.tryAcquire(2, 2, TimeUnit.SECONDS)) nnPermits.release(2)
     }
 
-    private fun submitNn(prev: FrameSlot, cur: FrameSlot, t0: Long, d: Governor.Decision): Boolean {
-        if (cur.width != nnOutW || cur.height != nnOutH) { nnDrain(); nnOutW = cur.width; nnOutH = cur.height }
+    private fun submitNn(prev: FrameSlot, cur: FrameSlot, prevHb: HardwareBuffer, curHb: HardwareBuffer, t0: Long, d: Governor.Decision): Boolean {
+        if (curHb.width != nnOutW || curHb.height != nnOutH) { nnDrain(); nnOutW = curHb.width; nnOutH = curHb.height }
         // NPU đang bận 2 khung: bỏ khung này (không present chen ngang để không đảo thứ tự hiển thị).
         if (!nnPermits.tryAcquire()) { stats.framesSkipped.incrementAndGet(); return true }
-        val slot = native.nnPre(prev.hardwareBuffer, cur.hardwareBuffer)
+        val slot = native.nnPre(prevHb, curHb)
         if (slot < 0) { nnPermits.release(); lastError = native.lastError(); return false }
         val job = NnJob(prev, cur, slot)
         usedJob = job
@@ -461,10 +464,78 @@ class FramePipeline(
         native.setTune(sThr, oThr, if (st.hudProtect) 0 else 1)
     }
 
+    // --- Upscale ×2 trên NPU (xem Pipeline::Sr* trong native) ---
+    private var sr: SrBackend? = null
+    private var srInited = false
+    private var srFailUntilMs = 0L
+    private var srCounter = 0
+    @Volatile private var srNote = ""
+    @Volatile private var srActive = false
+    private val srMsEma = com.fluidframes.telemetry.Ema(0.1f)
+    private var lastHr: HardwareBuffer? = null
+    private var lastHrSeq = -1L
+    private val srTokens: Array<HardwareBuffer> by lazy {
+        Array(8) { HardwareBuffer.create(64, 64, HardwareBuffer.RGBA_8888, 1, HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE) }
+    }
+
+    private fun srStop() {
+        sr?.close(); sr = null; srInited = false; lastHr = null; lastHrSeq = -1L; srActive = false
+        srNote = ""
+    }
+
+    /** Chạy SR cho 1 khung chụp: GPU xếp tensor -> NPU -> GPU ghép ảnh HR. Trả token của ảnh HR, hoặc null nếu lỗi. */
+    private fun srRun(f: FrameSlot): HardwareBuffer? {
+        val b = sr ?: return null
+        val inB = native.srIn(); val outB = native.srOut()
+        if (inB == null || outB == null) { srNote = "lỗi bộ nhớ SR: " + native.lastError(); return null }
+        val t0 = System.nanoTime()
+        if (!native.srPre(f.hardwareBuffer)) { srNote = "lỗi GPU (pre): " + native.lastError().take(60); return null }
+        if (b.run(inB, outB) < 0f) { srNote = "lỗi NPU: " + b.lastError.take(60); return null }
+        val slot = srCounter++ and 7
+        val tok = srTokens[slot]
+        if (!native.srPost(f.hardwareBuffer, tok, slot)) { srNote = "lỗi GPU (post): " + native.lastError().take(60); return null }
+        srMsEma.add((System.nanoTime() - t0) / 1e6f)
+        return tok
+    }
+
+    /** Trả cặp ảnh HR (prev, cur) cho khung đang xử lý, hoặc null (rơi về ảnh chụp thường). */
+    private fun srPair(prev: FrameSlot, cur: FrameSlot): Pair<HardwareBuffer, HardwareBuffer>? {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (cur.width != SR_W || cur.height != SR_H) {
+            srNote = "ảnh chụp ${cur.width}×${cur.height} ≠ ${SR_W}×${SR_H} (bấm Dừng rồi Bắt đầu lại để áp dụng)"; srActive = false; return null
+        }
+        if (stats.srcFps.fps() > 50f) { srNote = "tắt tạm: nguồn >50 fps (NPU không kịp)"; srActive = false; return null }
+        if (now < srFailUntilMs) { srActive = false; return null }
+        if (!srInited) {
+            // Tham số lượng tử của model (sinh bởi models/make_sr_trained.py, xem models/weights/sr_x2_1170x540.json).
+            if (!native.srInit(context.assets, SR_W, SR_H, 0.003921568859368563f, -128, 0.0032997210510075092f, 1)) {
+                srNote = "khởi tạo GPU lỗi: " + native.lastError().take(80); srFailUntilMs = now + 8000; return null
+            }
+            val b = SrBackend(context)
+            if (!b.load("models/sr_x2_1170x540.tflite", 3 * SR_W * SR_H)) {
+                srNote = "không nạp được model SR: " + b.lastError.trim().take(100); srFailUntilMs = now + 8000; return null
+            }
+            sr = b; srInited = true
+        }
+        val prevHr = if (lastHr != null && lastHrSeq == prev.seq) lastHr else srRun(prev)
+        val curHr = if (prevHr != null) srRun(cur) else null
+        if (prevHr == null || curHr == null) {
+            lastHr = null; lastHrSeq = -1L; srActive = false
+            srFailUntilMs = now + 4000
+            return null
+        }
+        lastHr = curHr; lastHrSeq = cur.seq
+        srActive = true
+        val b = sr
+        srNote = "×2 NPU %.1f ms (vào %.1f/chạy %.1f/ra %.1f)".format(srMsEma.value, b?.copyInMs ?: 0f, b?.runMs ?: 0f, b?.copyOutMs ?: 0f)
+        return Pair(prevHr, curHr)
+    }
+
     private fun process(prev: FrameSlot?, cur: FrameSlot) {
         val st = settings()
         applyTune(st)
         applyEnnPower(st)
+        if (st.upscale != 1 && (sr != null || srNote.isNotEmpty())) srStop()
         if (st.npuPrecision != wantPrec) { wantPrec = st.npuPrecision; failLong = 0 }
         // Chỉ nội suy app đã bật. Chưa nhận ra app (chưa bật Trợ năng) thì cứ nội suy như cũ.
         if (st.onlyEnabledApps) {
@@ -551,15 +622,18 @@ class FramePipeline(
         }
 
         val t0 = System.nanoTime()
+        var prevHb = prev.hardwareBuffer
+        var curHb = cur.hardwareBuffer
+        if (st.upscale == 1) srPair(prev, cur)?.let { prevHb = it.first; curHb = it.second }
         var useNn = d.mode == Mode.FLOW_NN && ensureBackend(st.backend, d.tier.longSide, pw, ph)
         if (useNn) {
-            if (submitNn(prev, cur, t0, d)) return
+            if (submitNn(prev, cur, prevHb, curHb, t0, d)) return
             useNn = false
         }
         if (!useNn) {
             // Đường GPU bất đồng bộ: 1 lần gửi GPU cho cả khung nội suy + khung thật, không chờ GPU xong.
             val tA = System.nanoTime()
-            val sq = native.gpuAsync(prev.hardwareBuffer, cur.hardwareBuffer)
+            val sq = native.gpuAsync(prevHb, curHb)
             asyncCallEma.add((System.nanoTime() - tA) / 1e6f)
             if (sq > 0) {
                 usedSeq = sq
@@ -583,7 +657,7 @@ class FramePipeline(
             lastError = native.lastError()
             // -1: chưa có swapchain / lỗi tạm thời -> rơi về đường đồng bộ cũ bên dưới.
         }
-        var res = native.begin(prev.hardwareBuffer, cur.hardwareBuffer, nn = useNn, blockMatch = !useNn)
+        var res = native.begin(prevHb, curHb, nn = useNn, blockMatch = !useNn)
         if (res == BeginResult.ERROR) { lastError = native.lastError(); passthrough(cur); return }
 
         var inferMs = 0f
@@ -597,7 +671,7 @@ class FramePipeline(
                 markFail(backendLoadedFor, false, "lỗi suy luận NPU → GPU (thử lại sau 6s)")
                 useNn = false
                 inferMs = 0f
-                res = native.begin(prev.hardwareBuffer, cur.hardwareBuffer, nn = false, blockMatch = true)
+                res = native.begin(prevHb, curHb, nn = false, blockMatch = true)
                 if (res == BeginResult.ERROR) { lastError = native.lastError(); passthrough(cur); return }
                 interp = res == BeginResult.OK
             }
@@ -639,5 +713,7 @@ class FramePipeline(
         const val TAG = "FramePipeline"
         const val HIDE_AFTER_FRAMES = 20
         const val NN_FLOW_TRAINED = true
+        const val SR_W = 1170
+        const val SR_H = 540
     }
 }

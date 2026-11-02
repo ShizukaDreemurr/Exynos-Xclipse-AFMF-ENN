@@ -27,6 +27,9 @@ object NpuEnv {
         val withGpuFallback: Boolean,
     )
 
+    /** NPU chỉ chạy tuần tự: model flow (luồng ff-npu) và model SR (luồng pipeline) dùng chung khóa này. */
+    val npuLock = Any()
+
     val strategies: List<Strategy> = listOf(
         Strategy("A", "Dispatch riêng · nạp từ assets", EnvMode.DISPATCH_ONLY, false, false),
         Strategy("B", "Dispatch riêng · nạp từ file", EnvMode.DISPATCH_ONLY, true, false),

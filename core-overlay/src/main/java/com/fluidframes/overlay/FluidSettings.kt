@@ -19,6 +19,8 @@ data class FluidSettings(
     val alwaysInterp: Boolean = false,
     /** Chế độ điện NPU: 0 mặc định LiteRT (tối đa) | 1 cân bằng | 2 tiết kiệm. */
     val npuPower: Int = 0,
+    /** Upscale NPU: 0 tắt | 1 ×2 (chụp nửa độ phân giải máy, NPU phóng gấp đôi + làm nét). */
+    val upscale: Int = 0,
     val npuPrecision: Int = 0,   // 0 tự động (INT8>FP16>FP32) | 1 INT8 | 2 FP16 | 3 FP32
     /** Độ nhạy chuyển động: 0 thấp (an toàn) | 1 vừa | 2 cao (tin flow hơn). */
     val sensitivity: Int = 1,
@@ -35,7 +37,10 @@ data class FluidSettings(
     val hudAlpha: Int = 67,
     /** 0 góc trái | 1 giữa trên | 2 phải trên. */
     val hudAnchor: Int = 0,
-)
+) {
+    /** Cạnh dài ảnh chụp thực tế: SR ×2 cần đúng nửa độ phân giải màn hình (model 1170x540 cho 2340x1080). */
+    fun captureLongSide(): Int = if (upscale == 1) 1170 else outLongSide
+}
 
 /** Các dòng của HUD số liệu; mỗi dòng bật/tắt riêng trong menu overlay. */
 object HudLines {
@@ -67,6 +72,7 @@ class SettingsStore(context: Context) {
         alwaysInterp = prefs.getBoolean("always", false),
         npuPrecision = prefs.getInt("npuprec", 0),
         npuPower = prefs.getInt("npupow", 0),
+        upscale = prefs.getInt("upscale", 0),
         sensitivity = prefs.getInt("sens", 1),
         hudProtect = prefs.getBoolean("hudprot", true),
         onlyEnabledApps = prefs.getBoolean("onlyapps", true),
@@ -89,6 +95,7 @@ class SettingsStore(context: Context) {
             .putBoolean("always", s.alwaysInterp)
             .putInt("npuprec", s.npuPrecision)
             .putInt("npupow", s.npuPower)
+            .putInt("upscale", s.upscale)
             .putInt("sens", s.sensitivity)
             .putBoolean("hudprot", s.hudProtect)
             .putBoolean("onlyapps", s.onlyEnabledApps)

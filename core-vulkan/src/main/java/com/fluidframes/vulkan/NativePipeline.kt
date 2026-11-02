@@ -68,6 +68,14 @@ class NativePipeline private constructor(private var handle: Long) {
     /** Số thứ tự lớn nhất đã chạy xong trên GPU: các HardwareBuffer dùng cho lần gửi ≤ số này mới được trả lại producer. */
     fun doneSeq(): Long = NativeBridge.nativeDoneSeq(handle)
 
+    /** Upscale SR x2: dựng bộ nhớ/pipeline cho model vào lrW x lrH (int8, tham số lượng tử từ JSON). */
+    fun srInit(assets: android.content.res.AssetManager, w: Int, h: Int, inScale: Float, inZp: Int, outScale: Float, outZp: Int): Boolean =
+        NativeBridge.nativeSrInit(handle, assets, w, h, inScale, inZp, outScale, outZp)
+    fun srIn(): ByteBuffer? = NativeBridge.nativeSrIn(handle)?.order(ByteOrder.nativeOrder())
+    fun srOut(): ByteBuffer? = NativeBridge.nativeSrOut(handle)?.order(ByteOrder.nativeOrder())
+    fun srPre(lr: HardwareBuffer): Boolean = NativeBridge.nativeSrPre(handle, lr)
+    fun srPost(lr: HardwareBuffer, token: HardwareBuffer, slot: Int): Boolean = NativeBridge.nativeSrPost(handle, lr, token, slot)
+
     fun presentReal(cur: HardwareBuffer): Boolean = NativeBridge.nativePresentReal(handle, cur)
 
     private val statsArr = FloatArray(16)

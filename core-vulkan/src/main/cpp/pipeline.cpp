@@ -79,6 +79,12 @@ Pipeline::~Pipeline() {
         vkDestroyPipeline(dev_, pBlock_, nullptr);
         vkDestroyPipeline(dev_, pFlowPack_, nullptr);
         vkDestroyPipeline(dev_, pWarp_, nullptr);
+        if (pSrPre_) vkDestroyPipeline(dev_, pSrPre_, nullptr);
+        if (pSrPost_) vkDestroyPipeline(dev_, pSrPost_, nullptr);
+        if (fenceSr_) vkDestroyFence(dev_, fenceSr_, nullptr);
+        DestroyBuf(srIn_);
+        DestroyBuf(srOut_);
+        for (auto& im : srHr_) DestroyImg(im);
         vkDestroyDescriptorPool(dev_, dpool_, nullptr);
         vkDestroyPipelineLayout(dev_, pl_, nullptr);
         vkDestroyDescriptorSetLayout(dev_, dsl_, nullptr);
@@ -293,9 +299,9 @@ bool Pipeline::CreateDescriptors() {
     pli.pPushConstantRanges = &pcr;
     VK_TRY(vkCreatePipelineLayout(dev_, &pli, nullptr, &pl_));
 
-    VkDescriptorPoolSize sizes[3] = {{CIS, 4 * (1 + kAsync)}, {SI, 5 * (1 + kAsync)}, {SB, 3 * (1 + kAsync)}};
+    VkDescriptorPoolSize sizes[3] = {{CIS, 4 * (2 + kAsync)}, {SI, 5 * (2 + kAsync)}, {SB, 3 * (2 + kAsync)}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    dpi.maxSets = 1 + kAsync;
+    dpi.maxSets = 2 + kAsync;
     dpi.poolSizeCount = 3;
     dpi.pPoolSizes = sizes;
     VK_TRY(vkCreateDescriptorPool(dev_, &dpi, nullptr, &dpool_));
@@ -306,6 +312,7 @@ bool Pipeline::CreateDescriptors() {
     dai.pSetLayouts = &dsl_;
     VK_TRY(vkAllocateDescriptorSets(dev_, &dai, &ds_));
     for (int i = 0; i < kAsync; ++i) VK_TRY(vkAllocateDescriptorSets(dev_, &dai, &af_[i].ds));
+    VK_TRY(vkAllocateDescriptorSets(dev_, &dai, &dsSr_));
     return true;
 }
 
@@ -635,12 +642,13 @@ Pipeline::Ahb* Pipeline::ImportAhb(AHardwareBuffer* ahb) {
 
 void Pipeline::DestroyAhbCache() {
     DrainAsync();
-    for (auto& kv : ahb_) {
-        vkDestroyImageView(dev_, kv.second.view, nullptr);
-        vkDestroyImage(dev_, kv.second.img, nullptr);
-        vkFreeMemory(dev_, kv.second.mem, nullptr);
+    for (auto it = ahb_.begin(); it != ahb_.end();) {
+        if (it->second.internal) { ++it; continue; }   // ảnh HR của SR do SrInit sở hữu
+        vkDestroyImageView(dev_, it->second.view, nullptr);
+        vkDestroyImage(dev_, it->second.img, nullptr);
+        vkFreeMemory(dev_, it->second.mem, nullptr);
+        it = ahb_.erase(it);
     }
-    ahb_.clear();
     curPrev_ = curCur_ = nullptr;
 }
 
@@ -775,6 +783,19 @@ bool Pipeline::SubmitAndWait(VkCommandBuffer cb, VkFence fence) {
 // Nhận quyền sở hữu ảnh từ producer ngoài (compositor) trước khi sample.
 void Pipeline::CmdAcquire(VkCommandBuffer cb, Ahb* a) {
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    if (a->internal) {   // ảnh HR của SR: cùng hàng đợi, chỉ đổi layout GENERAL -> READ_ONLY
+        b.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        b.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = a->img;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &b);
+        return;
+    }
     b.srcAccessMask = 0;
     b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -790,6 +811,19 @@ void Pipeline::CmdAcquire(VkCommandBuffer cb, Ahb* a) {
 // Trả ảnh về producer sau khi dùng xong.
 void Pipeline::CmdRelease(VkCommandBuffer cb, Ahb* a) {
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    if (a->internal) {
+        b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        b.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        b.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = a->img;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &b);
+        return;
+    }
     b.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     b.dstAccessMask = 0;
     b.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -983,7 +1017,7 @@ int64_t Pipeline::GpuAsync(AHardwareBuffer* prev, AHardwareBuffer* cur) {
     if (procW_ == 0) { FailMsg("GpuAsync gọi trước Configure"); return -1; }
     if (sc_ == VK_NULL_HANDLE || scDirty_) return -1;  // chưa có swapchain: để đường legacy xử lý/dựng lại
     PollAsync();
-    if (ahb_.size() > kMaxAhbCache) DestroyAhbCache();  // tự Drain trước khi huỷ
+    if (ahb_.size() > kMaxAhbCache + (srReady_ ? static_cast<size_t>(kSrRing) : 0)) DestroyAhbCache();  // tự Drain trước khi huỷ
     Ahb* a = ImportAhb(prev);
     Ahb* b = a ? ImportAhb(cur) : nullptr;
     if (!a || !b) return -1;
@@ -1117,7 +1151,7 @@ int Pipeline::NnPre(AHardwareBuffer* prev, AHardwareBuffer* cur) {
     if (procW_ == 0) { FailMsg("NnPre gọi trước Configure"); return -1; }
     if (sc_ == VK_NULL_HANDLE || scDirty_) return -1;
     PollAsync();
-    if (ahb_.size() > kMaxAhbCache) DestroyAhbCache();
+    if (ahb_.size() > kMaxAhbCache + (srReady_ ? static_cast<size_t>(kSrRing) : 0)) DestroyAhbCache();
     Ahb* a = ImportAhb(prev);
     Ahb* b = a ? ImportAhb(cur) : nullptr;
     if (!a || !b) return -1;
@@ -1329,7 +1363,7 @@ int Pipeline::Begin(AHardwareBuffer* prev, AHardwareBuffer* cur, bool nn, bool b
         FailMsg("Begin gọi trước Configure");
         return kBeginError;
     }
-    if (ahb_.size() > kMaxAhbCache) DestroyAhbCache();
+    if (ahb_.size() > kMaxAhbCache + (srReady_ ? static_cast<size_t>(kSrRing) : 0)) DestroyAhbCache();
     Ahb* a = ImportAhb(prev);
     Ahb* b = a ? ImportAhb(cur) : nullptr;
     if (!a || !b) return kBeginError;
@@ -1527,7 +1561,7 @@ bool Pipeline::Finish(bool interp, bool nnFlowReady, float gapMs) {
 bool Pipeline::PresentReal(AHardwareBuffer* cur) {
     std::lock_guard<std::mutex> lk(mu_);
     if (procW_ == 0) return FailMsg("PresentReal gọi trước Configure");
-    if (ahb_.size() > kMaxAhbCache) DestroyAhbCache();
+    if (ahb_.size() > kMaxAhbCache + (srReady_ ? static_cast<size_t>(kSrRing) : 0)) DestroyAhbCache();
     Ahb* b = ImportAhb(cur);
     if (!b) return false;
     if (!EnsureOut(b->w, b->h)) return false;
@@ -1665,6 +1699,154 @@ void Pipeline::GetStats(float* out, int n) {
     // Không khoá mu_: GpuAsync có thể đang chờ ảnh swapchain (backpressure); đọc float căn lề là an toàn.
     const int c = std::min(n, 16);
     for (int i = 0; i < c; ++i) out[i] = stats_[i];
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Upscale SR x2 (NPU): sr_pre -> [Kotlin chạy NPU] -> sr_post
+// ---------------------------------------------------------------------------------------------
+
+bool Pipeline::SrInit(AAssetManager* assets, int lrW, int lrH, float inScale, int inZp, float outScale, int outZp) {
+    std::lock_guard<std::mutex> lk(mu_);
+    srInScale_ = inScale; srInZp_ = inZp; srOutScale_ = outScale; srOutZp_ = outZp;
+    if (srReady_ && srLrW_ == lrW && srLrH_ == lrH) return true;
+    if (lrW <= 0 || lrH <= 0) return FailMsg("SrInit: kích thước sai");
+    vkDeviceWaitIdle(dev_);
+    srReady_ = false;
+    if (!pSrPre_) pSrPre_ = MakeComputePipeline(assets, "sr_pre");
+    if (!pSrPost_) pSrPost_ = MakeComputePipeline(assets, "sr_post");
+    if (!pSrPre_ || !pSrPost_) return false;
+    if (!cbSr_) {
+        VkCommandBufferAllocateInfo ai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+        ai.commandPool = pool_;
+        ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        ai.commandBufferCount = 1;
+        VK_TRY(vkAllocateCommandBuffers(dev_, &ai, &cbSr_));
+    }
+    if (!fenceSr_) {
+        VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
+        VK_TRY(vkCreateFence(dev_, &fi, nullptr, &fenceSr_));
+    }
+    const VkDeviceSize plane = static_cast<VkDeviceSize>(lrW) * lrH;
+    if (!MakeBuffer(srIn_, (3 * plane + 3) / 4 * 4)) return false;
+    if (!MakeBuffer(srOut_, (12 * plane + 3) / 4 * 4)) return false;
+    std::vector<VkImage> imgs;
+    for (int i = 0; i < kSrRing; ++i) {
+        if (!MakeImage(srHr_[i], static_cast<uint32_t>(lrW) * 2, static_cast<uint32_t>(lrH) * 2, VK_FORMAT_R8G8B8A8_UNORM,
+                       VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) return false;
+        imgs.push_back(srHr_[i].img);
+    }
+    if (!TransitionToGeneral(imgs)) return false;
+    // Buffer tĩnh gắn 1 lần vào set riêng của SR (binding 4 = vào, 5 = ra).
+    VkDescriptorBufferInfo bi[2] = {{srIn_.buf, 0, VK_WHOLE_SIZE}, {srOut_.buf, 0, VK_WHOLE_SIZE}};
+    VkWriteDescriptorSet w[2];
+    for (int i = 0; i < 2; ++i) {
+        w[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        w[i].dstSet = dsSr_;
+        w[i].dstBinding = 4 + i;
+        w[i].descriptorCount = 1;
+        w[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        w[i].pBufferInfo = &bi[i];
+    }
+    vkUpdateDescriptorSets(dev_, 2, w, 0, nullptr);
+    srLrW_ = lrW; srLrH_ = lrH;
+    srReady_ = true;
+    LOGI("SR sẵn sàng: %dx%d -> %dx%d", lrW, lrH, lrW * 2, lrH * 2);
+    return true;
+}
+
+uint8_t* Pipeline::SrIn(size_t* bytes) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!srReady_) return nullptr;
+    if (bytes) *bytes = static_cast<size_t>(srIn_.size);
+    return static_cast<uint8_t*>(srIn_.ptr);
+}
+
+uint8_t* Pipeline::SrOut(size_t* bytes) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!srReady_) return nullptr;
+    if (bytes) *bytes = static_cast<size_t>(srOut_.size);
+    return static_cast<uint8_t*>(srOut_.ptr);
+}
+
+// Ghi lệnh + gửi + chờ xong cho 1 trong 2 bước SR. post=false: sr_pre; post=true: sr_post ra ảnh HR của slot.
+bool Pipeline::SrRecord(AHardwareBuffer* lr, VkPipeline pipe, bool post, int slot) {
+    Ahb* a = ImportAhb(lr);
+    if (!a) return false;
+    if (static_cast<int>(a->w) != srLrW_ || static_cast<int>(a->h) != srLrH_) {
+        return FailMsg("khung chụp " + std::to_string(a->w) + "x" + std::to_string(a->h) + " khác cỡ model SR " +
+                       std::to_string(srLrW_) + "x" + std::to_string(srLrH_));
+    }
+    Img& hr = srHr_[slot];
+    VkDescriptorImageInfo ii[2] = {{sampler_, a->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                   {VK_NULL_HANDLE, hr.view, VK_IMAGE_LAYOUT_GENERAL}};
+    VkWriteDescriptorSet w[2];
+    w[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w[0].dstSet = dsSr_; w[0].dstBinding = 0; w[0].descriptorCount = 1;
+    w[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; w[0].pImageInfo = &ii[0];
+    w[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+    w[1].dstSet = dsSr_; w[1].dstBinding = 8; w[1].descriptorCount = 1;
+    w[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE; w[1].pImageInfo = &ii[1];
+    vkUpdateDescriptorSets(dev_, post ? 2 : 1, w, 0, nullptr);
+
+    struct SrPC {
+        int32_t lrW, lrH, hrW, hrH, words, pad0;
+        float inScale, outScale;
+        int32_t inZp, outZp, p[6];
+    } pc{};
+    static_assert(sizeof(SrPC) == 64, "SrPC phải 64 byte");
+    pc.lrW = srLrW_; pc.lrH = srLrH_; pc.hrW = srLrW_ * 2; pc.hrH = srLrH_ * 2;
+    pc.words = static_cast<int32_t>((3ll * srLrW_ * srLrH_ + 3) / 4);
+    pc.inScale = srInScale_; pc.outScale = srOutScale_; pc.inZp = srInZp_; pc.outZp = srOutZp_;
+
+    VK_TRY(vkResetCommandBuffer(cbSr_, 0));
+    VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_TRY(vkBeginCommandBuffer(cbSr_, &bi));
+    CmdAcquire(cbSr_, a);
+    vkCmdBindPipeline(cbSr_, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    vkCmdBindDescriptorSets(cbSr_, VK_PIPELINE_BIND_POINT_COMPUTE, pl_, 0, 1, &dsSr_, 0, nullptr);
+    vkCmdPushConstants(cbSr_, pl_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
+    if (post) vkCmdDispatch(cbSr_, (pc.hrW + 7) / 8, (pc.hrH + 7) / 8, 1);
+    else vkCmdDispatch(cbSr_, (pc.words + 63) / 64, 1, 1);
+    CmdRelease(cbSr_, a);
+    // Kết quả ra bộ nhớ chung (CPU đọc) hoặc ảnh HR (GPU đọc ở lần gửi sau).
+    VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_HOST_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cbSr_, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_HOST_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+    VK_TRY(vkEndCommandBuffer(cbSr_));
+    return SubmitAndWait(cbSr_, fenceSr_);
+}
+
+bool Pipeline::SrPre(AHardwareBuffer* lr) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!srReady_) return FailMsg("SrPre gọi trước SrInit");
+    if (ahb_.size() > kMaxAhbCache + (srReady_ ? static_cast<size_t>(kSrRing) : 0)) DestroyAhbCache();
+    return SrRecord(lr, pSrPre_, false, 0);
+}
+
+bool Pipeline::SrPost(AHardwareBuffer* lr, AHardwareBuffer* token, int slot) {
+    std::lock_guard<std::mutex> lk(mu_);
+    if (!srReady_) return FailMsg("SrPost gọi trước SrInit");
+    slot = ((slot % kSrRing) + kSrRing) % kSrRing;
+    if (!SrRecord(lr, pSrPost_, true, slot)) return false;
+    uint64_t id = 0;
+    AHardwareBuffer_getId(token, &id);
+    auto it = ahb_.find(id);
+    if (it != ahb_.end() && !it->second.internal) {   // token từng bị import nhầm như ảnh thật: bỏ
+        vkDeviceWaitIdle(dev_);
+        vkDestroyImageView(dev_, it->second.view, nullptr);
+        vkDestroyImage(dev_, it->second.img, nullptr);
+        vkFreeMemory(dev_, it->second.mem, nullptr);
+        ahb_.erase(it);
+    }
+    Ahb e;
+    e.img = srHr_[slot].img; e.view = srHr_[slot].view; e.mem = VK_NULL_HANDLE;
+    e.w = srHr_[slot].w; e.h = srHr_[slot].h; e.internal = true;
+    ahb_[id] = e;
+    return true;
 }
 
 }  // namespace ff

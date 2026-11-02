@@ -197,7 +197,7 @@ class ProjectionService : Service() {
                 val oldHz = old.targetHz
                 store.save(it)
                 // Đổi độ phân giải chụp: áp dụng ngay (resize VirtualDisplay), không cần Bắt đầu lại.
-                if (it.outLongSide != old.outLongSide) engine?.reconfigure(CaptureConfig.fromContext(this, it.outLongSide))
+                if (it.captureLongSide() != old.captureLongSide()) engine?.reconfigure(CaptureConfig.fromContext(this, it.captureLongSide()))
                 if (it.targetHz != oldHz) {
                     if (it.targetHz > 0) RefreshForce.apply(this, it.targetHz.toFloat()) else RefreshForce.restore(this)
                 }
@@ -254,7 +254,7 @@ class ProjectionService : Service() {
             engine = ScreenCaptureEngine(
                 projection = projection,
                 ring = ring,
-                initialConfig = CaptureConfig.fromContext(this, SettingsStore(this).load().outLongSide),
+                initialConfig = CaptureConfig.fromContext(this, SettingsStore(this).load().captureLongSide()),
                 onProjectionStopped = { stopSelf() },
             ).also { it.start() }
             if (!startRendering()) stopSelf()
@@ -271,7 +271,7 @@ class ProjectionService : Service() {
     /** Xoay màn hình -> kích thước VirtualDisplay phải đổi theo. */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        engine?.reconfigure(CaptureConfig.fromContext(this, SettingsStore(this).load().outLongSide))
+        engine?.reconfigure(CaptureConfig.fromContext(this, SettingsStore(this).load().captureLongSide()))
     }
 
     override fun onDestroy() {

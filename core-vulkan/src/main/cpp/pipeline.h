@@ -83,6 +83,16 @@ public:
     // Số thứ tự lớn nhất mà GPU đã chạy xong (mọi AHardwareBuffer dùng cho các lần gửi ≤ số này có thể trả lại producer).
     int64_t DoneSeq();
 
+    // --- Upscale SR x2 trên NPU: GPU xếp tensor int8 -> (Kotlin chạy NPU) -> GPU cộng bilinear + pixel-shuffle ra ảnh HR ---
+    // Ảnh HR nằm trong bộ nhớ riêng; "token" là 1 HardwareBuffer nhỏ do Kotlin cấp, dùng làm khóa để các hàm Begin/GpuAsync/NnPre
+    // nhận ảnh HR y như nhận khung chụp (ImportAhb tra theo id của token).
+    bool SrInit(AAssetManager* assets, int lrW, int lrH, float inScale, int inZp, float outScale, int outZp);
+    uint8_t* SrIn(size_t* bytes);   // int8 NCHW [1,3,lrH,lrW]
+    uint8_t* SrOut(size_t* bytes);  // int8 NCHW [1,12,lrH,lrW]
+    bool SrPre(AHardwareBuffer* lr);
+    bool SrPost(AHardwareBuffer* lr, AHardwareBuffer* token, int slot);
+    static constexpr int kSrRing = 8;
+
     void GetStats(float* out, int n);
     std::string LastError();
 
@@ -104,6 +114,7 @@ private:
         VkDeviceMemory mem = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
         uint32_t w = 0, h = 0;
+        bool internal = false;   // ảnh HR của SR (không phải AHardwareBuffer): không cần chuyển quyền hàng đợi, không hủy khi dọn cache
     };
 
     Pipeline() = default;
@@ -202,6 +213,19 @@ private:
     VkPipeline pBlock_ = VK_NULL_HANDLE;
     VkPipeline pFlowPack_ = VK_NULL_HANDLE;
     VkPipeline pWarp_ = VK_NULL_HANDLE;
+    // SR
+    VkPipeline pSrPre_ = VK_NULL_HANDLE;
+    VkPipeline pSrPost_ = VK_NULL_HANDLE;
+    VkDescriptorSet dsSr_ = VK_NULL_HANDLE;
+    VkCommandBuffer cbSr_ = VK_NULL_HANDLE;
+    VkFence fenceSr_ = VK_NULL_HANDLE;
+    Buf srIn_, srOut_;
+    Img srHr_[kSrRing];
+    int srLrW_ = 0, srLrH_ = 0;
+    float srInScale_ = 1.f / 255.f, srOutScale_ = 1.f;
+    int srInZp_ = -128, srOutZp_ = 0;
+    bool srReady_ = false;
+    bool SrRecord(AHardwareBuffer* lr, VkPipeline pipe, bool post, int slot);
 
     // Tài nguyên
     Img lowPrev_, lowCur_, flow_, aux_, out_;
