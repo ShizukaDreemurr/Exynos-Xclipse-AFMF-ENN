@@ -139,6 +139,10 @@ class MenuOverlay(
         col.addView(ui.dropdown(TIERS.map { it.label }, tierIndex(settings.tier)) {
             settings = settings.copy(tier = TIERS[it]); onChange(settings)
         })
+        col.addView(ui.caption("Độ chính xác NPU (INT8 nhanh và tiết kiệm điện nhất)"))
+        col.addView(ui.dropdown(listOf("Tự động (INT8→FP16→FP32)", "INT8", "FP16", "FP32"), settings.npuPrecision.coerceIn(0, 3)) {
+            settings = settings.copy(npuPrecision = it); onChange(settings)
+        })
         col.addView(ui.caption("Công cụ tính flow"))
         col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
             settings = settings.copy(backend = BACKENDS[it]); onChange(settings)

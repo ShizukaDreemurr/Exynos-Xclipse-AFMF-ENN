@@ -55,6 +55,8 @@ class FramePipeline(
     private var backend: InferenceBackend? = null
     private var backendChoice: FlowBackend? = null
     private var backendLoadedFor = 0     // longSide đã nạp
+    private var backendPrec = -1
+    @Volatile private var wantPrec = 0
     private var backendFailed = false
     // Lỗi NPU nhớ THEO TỪNG model (longSide): đổi tier/độ phân giải là thử lại ngay; lỗi suy luận tự thử lại sau 6 giây.
     private var failLong = 0
@@ -411,7 +413,7 @@ class FramePipeline(
     }
 
     private fun ensureBackend(choice: FlowBackend, longSide: Int, procW: Int, procH: Int): Boolean {
-        if (choice != backendChoice || backendLoadedFor != longSide) nnDrain()
+        if (choice != backendChoice || backendLoadedFor != longSide || backendPrec != wantPrec) nnDrain()
         if (choice != backendChoice) {
             backend?.close()
             backend = BackendFactory.create(context, choice)
@@ -422,12 +424,14 @@ class FramePipeline(
         val b = backend ?: return false
         if (failedFor(longSide)) return false
         backendFailed = false
-        if (backendLoadedFor != longSide) {
+        if (backendLoadedFor != longSide || backendPrec != wantPrec) {
+            b.precision = wantPrec
             if (!b.load(longSide, procW, procH)) {
                 markFail(longSide, true, "không nạp được flow_$longSide.tflite → GPU (đổi tier để thử lại)")
                 return false
             }
             backendLoadedFor = longSide
+            backendPrec = wantPrec
         }
         backendLabel = b.name
         return true
@@ -445,6 +449,7 @@ class FramePipeline(
     private fun process(prev: FrameSlot?, cur: FrameSlot) {
         val st = settings()
         applyTune(st)
+        if (st.npuPrecision != wantPrec) { wantPrec = st.npuPrecision; failLong = 0 }
         // Chỉ nội suy app đã bật. Chưa nhận ra app (chưa bật Trợ năng) thì cứ nội suy như cũ.
         if (st.onlyEnabledApps) {
             val fg = com.fluidframes.app.telemetry.TelemetryRecorder.foreground()

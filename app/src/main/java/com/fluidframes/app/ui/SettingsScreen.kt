@@ -86,6 +86,16 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
             }
 
             FFCard {
+                SectionTitle("Độ chính xác NPU")
+                Segmented(listOf("Tự động", "INT8", "FP16", "FP32"), settings.npuPrecision.coerceIn(0, 3)) {
+                    onChange(settings.copy(npuPrecision = it))
+                }
+                Spacer(Modifier.height(10.dp))
+                Text("INT8 nhanh và tiết kiệm điện nhất, FP16 cân bằng, FP32 chính xác nhất. Tự động chọn mức nhanh nhất có sẵn cho độ phân giải đang dùng.",
+                    style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
+            }
+
+            FFCard {
                 SectionTitle("Độ phân giải xử lý")
                 var open by remember { mutableStateOf(false) }
                 Box {

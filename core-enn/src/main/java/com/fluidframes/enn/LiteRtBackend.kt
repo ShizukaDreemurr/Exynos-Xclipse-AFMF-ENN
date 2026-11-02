@@ -34,18 +34,31 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
     var usedStrategy: NpuEnv.Strategy? = null
         private set
 
-    override val name: String get() = if (usedNpu) "NPU Exynos" else "—"
+    @Volatile private var loadedPrec = "FP32"
+    override var precision: Int = 0
+    override val name: String get() = if (usedNpu) "NPU Exynos $loadedPrec" else "—"
     override val onNpu: Boolean get() = usedNpu
 
     override fun load(longSide: Int, procW: Int, procH: Int): Boolean {
         close()
         lastError = ""
         if (!preferNpu) return false
-        val path = "models/flow_$longSide.tflite"
+        // Thứ tự thử: theo lựa chọn người dùng; luôn có đường lui xuống độ chính xác cao hơn.
+        val order0 = when (precision) {
+            1 -> listOf("int8", "fp16", "")
+            2 -> listOf("fp16", "")
+            3 -> listOf("")
+            else -> listOf("int8", "fp16", "")
+        }
+        val files = order0.mapNotNull { suf ->
+            val p = if (suf.isEmpty()) "models/flow_$longSide.tflite" else "models/flow_${longSide}_$suf.tflite"
+            if (try { context.assets.open(p).close(); true } catch (_: Throwable) { false }) suf to p else null
+        }
+        if (files.isEmpty()) { lastError = "không có model nào cho $longSide\n"; return false }
         val prefs = context.getSharedPreferences("npu", Context.MODE_PRIVATE)
         val lastOk = prefs.getString("strategy", null)
         val order = NpuEnv.strategies.sortedBy { if (it.id == lastOk) 0 else 1 }
-        for (s in order) {
+        for ((suf, path) in files) for (s in order) {
             val e = NpuEnv.create(context, s.env)
             try {
                 val m = NpuEnv.load(context, path, s, e)
@@ -56,6 +69,7 @@ class LiteRtBackend(private val context: Context, private val preferNpu: Boolean
                 outArr = FloatArray(5 * (procW / 2) * (procH / 2))
                 usedNpu = true
                 usedStrategy = s
+                loadedPrec = when (suf) { "int8" -> "INT8"; "fp16" -> "FP16"; else -> "FP32" }
                 prefs.edit().putString("strategy", s.id).apply()
                 Log.i(TAG, "Nạp $path trên NPU bằng cách ${s.id}: ${s.label}")
                 return true

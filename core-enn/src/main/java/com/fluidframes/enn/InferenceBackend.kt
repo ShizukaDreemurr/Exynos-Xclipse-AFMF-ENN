@@ -15,6 +15,11 @@ interface InferenceBackend {
     /** true nếu thực sự chạy trên NPU (không rơi về GPU/CPU). */
     val onNpu: Boolean
 
+    /** Độ chính xác ưu tiên: 0 tự động | 1 INT8 | 2 FP16 | 3 FP32. Đặt trước load(). */
+    var precision: Int
+        get() = 0
+        set(_) {}
+
     /** Nạp mô hình cho tier cạnh dài [longSide]. Trả false nếu không có file / không biên dịch được. */
     fun load(longSide: Int, procW: Int, procH: Int): Boolean
 
