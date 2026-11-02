@@ -36,6 +36,7 @@ class MenuOverlay(
     private var bubble: View? = null
     private var bubbleLp: WindowManager.LayoutParams? = null
     private var panel: View? = null
+    private var tab = 0
 
     fun show() {
         if (bubble != null) return
@@ -119,7 +120,7 @@ class MenuOverlay(
             background = OS.rounded(OS.BG, 28 * dp, OS.OUTLINE, ui.px(1))
         }
         col.addView(ui.title("Xclipse ENN-SS"))
-        col.addView(ui.toggleRow("Nội suy khung hình (tổng)", { settings.enabled }) {
+        col.addView(ui.toggleRow("Bật Xclipse ENN-SS (tổng)", { settings.enabled }) {
             settings = settings.copy(enabled = it); onChange(settings)
         })
         // App đang ở trước: bật nội suy riêng cho app này, có hiệu lực ngay (không cần mở app, không cần khởi động lại).
@@ -129,49 +130,67 @@ class MenuOverlay(
         } else {
             val pm = ctx.packageManager
             val label = try { pm.getApplicationLabel(pm.getApplicationInfo(fg, 0)).toString() } catch (_: Throwable) { fg }
-            col.addView(ui.toggleRow("Nội suy cho: $label", { fg in settings.enabledApps }) {
+            col.addView(ui.toggleRow("Bật cho: $label", { fg in settings.enabledApps }) {
                 settings = settings.copy(enabledApps = if (it) settings.enabledApps + fg else settings.enabledApps - fg)
                 onChange(settings)
             })
         }
-        col.addView(ui.toggleRow("Chỉ nội suy app đã bật", { settings.onlyEnabledApps }) {
+        col.addView(ui.toggleRow("Chỉ chạy app đã bật", { settings.onlyEnabledApps }) {
             settings = settings.copy(onlyEnabledApps = it); onChange(settings)
         })
-        col.addView(ui.caption("Độ phân giải xử lý (nhỏ hơn = NPU nhanh, ít điện, nhưng flow thô hơn)"))
-        col.addView(ui.dropdown(TIERS.map { it.label }, tierIndex(settings.tier)) {
-            settings = settings.copy(tier = TIERS[it]); onChange(settings)
-        })
-        col.addView(ui.caption("Độ chính xác NPU (INT8 nhanh và tiết kiệm điện nhất)"))
-        col.addView(ui.dropdown(listOf("Tự động (INT8→FP16→FP32)", "INT8", "FP16", "FP32"), settings.npuPrecision.coerceIn(0, 3)) {
-            settings = settings.copy(npuPrecision = it); onChange(settings)
-        })
-        col.addView(ui.caption("Độ phân giải chụp màn hình (thấp hơn = GPU nhẹ hơn, nhưng chữ/HUD của game mờ hơn)"))
-        val outOpts = listOf(0, 1920, 1560, 1280)
-        col.addView(ui.segmented(listOf("Gốc", "1920", "1560", "1280"), outOpts.indexOf(settings.outLongSide).coerceAtLeast(0)) {
-            settings = settings.copy(outLongSide = outOpts[it]); onChange(settings)
-        })
-        col.addView(ui.caption("Upscale NPU ×2: chụp nửa độ phân giải rồi NPU phóng gấp đôi + làm nét. Hợp game 30 fps (nguồn >50 fps tự tắt)"))
-        col.addView(ui.segmented(listOf("Tắt", "×2"), settings.upscale.coerceIn(0, 1)) {
-            settings = settings.copy(upscale = it); onChange(settings)
-        })
-        col.addView(ui.caption("Điện NPU (Tiết kiệm = hạ xung NPU, ít điện hơn, hơi chậm hơn)"))
-        col.addView(ui.segmented(listOf("Mặc định", "Cân bằng", "Tiết kiệm"), settings.npuPower.coerceIn(0, 2)) {
-            settings = settings.copy(npuPower = it); onChange(settings)
-        })
-        col.addView(ui.caption("Công cụ tính flow"))
-        col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
-            settings = settings.copy(backend = BACKENDS[it]); onChange(settings)
-        })
-        col.addView(ui.caption("Độ nhạy chuyển động"))
-        col.addView(ui.segmented(listOf("Thấp", "Vừa", "Cao", "Tối đa"), settings.sensitivity.coerceIn(0, 3)) {
-            settings = settings.copy(sensitivity = it); onChange(settings)
-        })
-        col.addView(ui.toggleRow("Bảo vệ HUD / chữ đứng yên", { settings.hudProtect }) {
-            settings = settings.copy(hudProtect = it); onChange(settings)
-        })
-        col.addView(ui.toggleRow("Luôn nội suy (không passthrough)", { settings.alwaysInterp }) {
-            settings = settings.copy(alwaysInterp = it); onChange(settings)
-        })
+        col.addView(ui.segmented(listOf("Nội suy", "Upscale"), tab) { tab = it; closePanel(); openPanel() })
+        if (tab == 0) {
+            if (settings.upscale != 0) {
+                col.addView(ui.caption("Đang ở chế độ Upscale: nội suy tạm dừng (hai chế độ không chạy cùng nhau)."))
+                col.addView(ui.button("Chuyển sang Nội suy", danger = false) { settings = settings.copy(upscale = 0); onChange(settings); closePanel(); openPanel() })
+            } else {
+                col.addView(ui.caption("Đang dùng: Nội suy khung hình"))
+            }
+            col.addView(ui.caption("Độ phân giải xử lý (nhỏ hơn = NPU nhanh, ít điện, nhưng flow thô hơn)"))
+            col.addView(ui.dropdown(TIERS.map { it.label }, tierIndex(settings.tier)) {
+                settings = settings.copy(tier = TIERS[it]); onChange(settings)
+            })
+            col.addView(ui.caption("Độ chính xác NPU (INT8 nhanh và tiết kiệm điện nhất)"))
+            col.addView(ui.dropdown(listOf("Tự động (INT8→FP16→FP32)", "INT8", "FP16", "FP32"), settings.npuPrecision.coerceIn(0, 3)) {
+                settings = settings.copy(npuPrecision = it); onChange(settings)
+            })
+            col.addView(ui.caption("Độ phân giải chụp màn hình (thấp hơn = GPU nhẹ hơn, nhưng chữ/HUD của game mờ hơn)"))
+            val outOpts = listOf(0, 1920, 1560, 1280)
+            col.addView(ui.segmented(listOf("Gốc", "1920", "1560", "1280"), outOpts.indexOf(settings.outLongSide).coerceAtLeast(0)) {
+                settings = settings.copy(outLongSide = outOpts[it]); onChange(settings)
+            })
+            col.addView(ui.caption("Điện NPU (Tiết kiệm = hạ xung NPU, ít điện hơn, hơi chậm hơn)"))
+            col.addView(ui.segmented(listOf("Mặc định", "Cân bằng", "Tiết kiệm"), settings.npuPower.coerceIn(0, 2)) {
+                settings = settings.copy(npuPower = it); onChange(settings)
+            })
+            col.addView(ui.caption("Công cụ tính flow"))
+            col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
+                settings = settings.copy(backend = BACKENDS[it]); onChange(settings)
+            })
+            col.addView(ui.caption("Độ nhạy chuyển động"))
+            col.addView(ui.segmented(listOf("Thấp", "Vừa", "Cao", "Tối đa"), settings.sensitivity.coerceIn(0, 3)) {
+                settings = settings.copy(sensitivity = it); onChange(settings)
+            })
+            col.addView(ui.toggleRow("Bảo vệ HUD / chữ đứng yên", { settings.hudProtect }) {
+                settings = settings.copy(hudProtect = it); onChange(settings)
+            })
+            col.addView(ui.toggleRow("Luôn nội suy (không passthrough)", { settings.alwaysInterp }) {
+                settings = settings.copy(alwaysInterp = it); onChange(settings)
+            })
+
+        } else {
+            col.addView(ui.caption("Upscale chạy RIÊNG, không nội suy. NPU xử lý từng khung chụp rồi hiển thị luôn."))
+            col.addView(ui.segmented(listOf("Tắt", "×1 làm nét", "×2 gấp đôi"), settings.upscale.coerceIn(0, 2)) {
+                settings = settings.copy(upscale = it); onChange(settings); closePanel(); openPanel()
+            })
+            col.addView(ui.caption("×2: chụp NỬA độ phân giải máy, NPU phóng gấp đôi + làm nét (~11 ms/khung, hợp cả 30 và 60 fps). Viền mép chỉ phóng thường để khỏi đụng HUD game."))
+            col.addView(ui.caption("×1: chụp độ phân giải gốc, NPU làm nét/khử nhiễu vùng giữa màn hình (~10 ms/khung); viền mép giữ nguyên ảnh gốc."))
+            if (settings.upscale != 0) col.addView(ui.caption("Đang bật Upscale: nội suy khung hình tạm dừng. Nguồn càng nhiều fps càng nặng NPU (60 fps ≈ 70% thời gian NPU)."))
+            col.addView(ui.caption("Điện NPU (Tiết kiệm = hạ xung NPU, ít điện hơn, hơi chậm hơn)"))
+            col.addView(ui.segmented(listOf("Mặc định", "Cân bằng", "Tiết kiệm"), settings.npuPower.coerceIn(0, 2)) {
+                settings = settings.copy(npuPower = it); onChange(settings)
+            })
+        }
         col.addView(ui.caption("Ép tần số quét màn hình"))
         col.addView(ui.segmented(listOf("Cao nhất", "60", "90", "120"), HZS.indexOf(settings.targetHz).coerceAtLeast(0)) {
             settings = settings.copy(targetHz = HZS[it]); onChange(settings)

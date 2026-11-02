@@ -19,7 +19,7 @@ data class FluidSettings(
     val alwaysInterp: Boolean = false,
     /** Chế độ điện NPU: 0 mặc định LiteRT (tối đa) | 1 cân bằng | 2 tiết kiệm. */
     val npuPower: Int = 0,
-    /** Upscale NPU: 0 tắt | 1 ×2 (chụp nửa độ phân giải máy, NPU phóng gấp đôi + làm nét). */
+    /** Chế độ riêng, KHÔNG chạy cùng nội suy: 0 = nội suy khung hình | 1 = Upscale ×2 (chụp nửa độ phân giải, NPU gấp đôi) | 2 = Upscale ×1 (làm nét, giữ độ phân giải). */
     val upscale: Int = 0,
     val npuPrecision: Int = 0,   // 0 tự động (INT8>FP16>FP32) | 1 INT8 | 2 FP16 | 3 FP32
     /** Độ nhạy chuyển động: 0 thấp (an toàn) | 1 vừa | 2 cao (tin flow hơn). */
@@ -39,7 +39,7 @@ data class FluidSettings(
     val hudAnchor: Int = 0,
 ) {
     /** Cạnh dài ảnh chụp thực tế: SR ×2 cần đúng nửa độ phân giải màn hình (model 1170x540 cho 2340x1080). */
-    fun captureLongSide(): Int = if (upscale == 1) 1170 else outLongSide
+    fun captureLongSide(): Int = when (upscale) { 1 -> 1170; 2 -> 0; else -> outLongSide }
 }
 
 /** Các dòng của HUD số liệu; mỗi dòng bật/tắt riêng trong menu overlay. */

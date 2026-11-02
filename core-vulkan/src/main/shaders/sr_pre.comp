@@ -7,11 +7,11 @@ layout(set = 0, binding = 0) uniform sampler2D uLr;
 layout(set = 0, binding = 4) buffer SrIn { uint q[]; };
 
 layout(push_constant) uniform PC {
-    int lrW, lrH, hrW, hrH;
-    int words; int pad0;
+    int lrW, lrH, outW, outH;
+    int words; int scale;
     float inScale; float outScale;
     int inZp; int outZp;
-    int p1, p2, p3, p4, p5, p6;
+    int cropX, cropY, margin, ramp, p5, p6;
 } pc;
 
 void main() {
@@ -26,7 +26,7 @@ void main() {
         int rem = idx - c * plane;
         int y = rem / pc.lrW;
         int x = rem - y * pc.lrW;
-        vec3 v = texelFetch(uLr, ivec2(x, y), 0).rgb;
+        vec3 v = texelFetch(uLr, ivec2(x + pc.cropX, y + pc.cropY), 0).rgb;
         float s = (c == 0) ? v.r : ((c == 1) ? v.g : v.b);
         int qv = clamp(int(floor(s / pc.inScale + 0.5)) + pc.inZp, -128, 127);
         word |= (uint(qv) & 0xFFu) << uint(8 * b);

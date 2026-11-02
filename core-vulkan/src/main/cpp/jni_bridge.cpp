@@ -146,10 +146,10 @@ FN(jstring, nativeLastError)(JNIEnv* env, jclass, jlong h) {
     return env->NewStringUTF(P(h)->LastError().c_str());
 }
 
-FN(jboolean, nativeSrInit)(JNIEnv* env, jclass, jlong h, jobject assetManager, jint w, jint hh,
-                           jfloat inScale, jint inZp, jfloat outScale, jint outZp) {
+FN(jboolean, nativeSrInit)(JNIEnv* env, jclass, jlong h, jobject assetManager, jint mw, jint mh, jint scale, jint srcW, jint srcH,
+                           jint cropX, jint cropY, jfloat inScale, jint inZp, jfloat outScale, jint outZp, jint margin, jint ramp) {
     AAssetManager* am = AAssetManager_fromJava(env, assetManager);
-    return P(h)->SrInit(am, w, hh, inScale, inZp, outScale, outZp) ? JNI_TRUE : JNI_FALSE;
+    return P(h)->SrInit(am, mw, mh, scale, srcW, srcH, cropX, cropY, inScale, inZp, outScale, outZp, margin, ramp) ? JNI_TRUE : JNI_FALSE;
 }
 
 FN(jobject, nativeSrIn)(JNIEnv* env, jclass, jlong h) {

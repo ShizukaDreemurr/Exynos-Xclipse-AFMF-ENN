@@ -68,9 +68,10 @@ class NativePipeline private constructor(private var handle: Long) {
     /** Số thứ tự lớn nhất đã chạy xong trên GPU: các HardwareBuffer dùng cho lần gửi ≤ số này mới được trả lại producer. */
     fun doneSeq(): Long = NativeBridge.nativeDoneSeq(handle)
 
-    /** Upscale SR x2: dựng bộ nhớ/pipeline cho model vào lrW x lrH (int8, tham số lượng tử từ JSON). */
-    fun srInit(assets: android.content.res.AssetManager, w: Int, h: Int, inScale: Float, inZp: Int, outScale: Float, outZp: Int): Boolean =
-        NativeBridge.nativeSrInit(handle, assets, w, h, inScale, inZp, outScale, outZp)
+    /** Upscale: model mw x mh (int8). scale 2 = gấp đôi toàn khung; scale 1 = làm nét vùng giữa (cropX,cropY) của ảnh nguồn srcW x srcH. */
+    fun srInit(assets: android.content.res.AssetManager, mw: Int, mh: Int, scale: Int, srcW: Int, srcH: Int, cropX: Int, cropY: Int,
+               inScale: Float, inZp: Int, outScale: Float, outZp: Int, margin: Int, ramp: Int): Boolean =
+        NativeBridge.nativeSrInit(handle, assets, mw, mh, scale, srcW, srcH, cropX, cropY, inScale, inZp, outScale, outZp, margin, ramp)
     fun srIn(): ByteBuffer? = NativeBridge.nativeSrIn(handle)?.order(ByteOrder.nativeOrder())
     fun srOut(): ByteBuffer? = NativeBridge.nativeSrOut(handle)?.order(ByteOrder.nativeOrder())
     fun srPre(lr: HardwareBuffer): Boolean = NativeBridge.nativeSrPre(handle, lr)

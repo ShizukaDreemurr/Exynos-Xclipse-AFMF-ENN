@@ -121,11 +121,12 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
             }
 
             FFCard {
-                SectionTitle("Upscale NPU")
-                Segmented(listOf("Tắt", "×2"), settings.upscale.coerceIn(0, 1)) { onChange(settings.copy(upscale = it)) }
+                SectionTitle("Upscale NPU (chế độ riêng, không chạy cùng nội suy)")
+                Segmented(listOf("Tắt", "×1 làm nét", "×2 gấp đôi"), settings.upscale.coerceIn(0, 2)) { onChange(settings.copy(upscale = it)) }
                 Spacer(Modifier.height(10.dp))
-                Text("×2: app chụp màn hình ở NỬA độ phân giải máy (1170×540), NPU phóng gấp đôi lên 2340×1080 và làm nét, rồi mới nội suy. " +
-                    "Model được huấn luyện riêng, hơn phóng to thường khoảng 4,6 dB (đo trên video game). Hợp game 30 fps; nguồn trên 50 fps tự tắt.",
+                Text("×2: chụp NỬA độ phân giải máy (1170×540), NPU phóng gấp đôi lên 2340×1080 và làm nét. " +
+                    "×1: chụp độ phân giải gốc, NPU làm nét/khử nhiễu vùng giữa màn hình, viền mép giữ nguyên để không đụng HUD game. " +
+                    "Bật Upscale thì nội suy tạm dừng. Cũng chọn được trong menu overlay (tab Upscale).",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
             }
             FFCard {

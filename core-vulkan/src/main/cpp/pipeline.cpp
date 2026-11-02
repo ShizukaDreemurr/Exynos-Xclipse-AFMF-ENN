@@ -1706,11 +1706,13 @@ void Pipeline::GetStats(float* out, int n) {
 // Upscale SR x2 (NPU): sr_pre -> [Kotlin chạy NPU] -> sr_post
 // ---------------------------------------------------------------------------------------------
 
-bool Pipeline::SrInit(AAssetManager* assets, int lrW, int lrH, float inScale, int inZp, float outScale, int outZp) {
+bool Pipeline::SrInit(AAssetManager* assets, int mW, int mH, int scale, int srcW, int srcH, int cropX, int cropY,
+                      float inScale, int inZp, float outScale, int outZp, int margin, int ramp) {
     std::lock_guard<std::mutex> lk(mu_);
-    srInScale_ = inScale; srInZp_ = inZp; srOutScale_ = outScale; srOutZp_ = outZp;
-    if (srReady_ && srLrW_ == lrW && srLrH_ == lrH) return true;
-    if (lrW <= 0 || lrH <= 0) return FailMsg("SrInit: kích thước sai");
+    srInScale_ = inScale; srInZp_ = inZp; srOutScale_ = outScale; srOutZp_ = outZp; srMargin_ = margin; srRamp_ = ramp < 1 ? 1 : ramp;
+    if (srReady_ && srLrW_ == mW && srLrH_ == mH && srScale_ == scale && srSrcW_ == srcW && srSrcH_ == srcH &&
+        srCropX_ == cropX && srCropY_ == cropY) return true;
+    if (mW <= 0 || mH <= 0 || (scale != 1 && scale != 2) || srcW < mW || srcH < mH) return FailMsg("SrInit: tham số sai");
     vkDeviceWaitIdle(dev_);
     srReady_ = false;
     if (!pSrPre_) pSrPre_ = MakeComputePipeline(assets, "sr_pre");
@@ -1727,17 +1729,22 @@ bool Pipeline::SrInit(AAssetManager* assets, int lrW, int lrH, float inScale, in
         VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         VK_TRY(vkCreateFence(dev_, &fi, nullptr, &fenceSr_));
     }
-    const VkDeviceSize plane = static_cast<VkDeviceSize>(lrW) * lrH;
+    srScale_ = scale; srSrcW_ = srcW; srSrcH_ = srcH; srCropX_ = cropX; srCropY_ = cropY;
+    srOutW_ = scale == 2 ? mW * 2 : srcW;
+    srOutH_ = scale == 2 ? mH * 2 : srcH;
+    const VkDeviceSize plane = static_cast<VkDeviceSize>(mW) * mH;
+    const VkDeviceSize outCh = static_cast<VkDeviceSize>(3 * scale * scale);
     if (!MakeBuffer(srIn_, (3 * plane + 3) / 4 * 4)) return false;
-    if (!MakeBuffer(srOut_, (12 * plane + 3) / 4 * 4)) return false;
+    if (!MakeBuffer(srOut_, (outCh * plane + 3) / 4 * 4)) return false;
     std::vector<VkImage> imgs;
     for (int i = 0; i < kSrRing; ++i) {
-        if (!MakeImage(srHr_[i], static_cast<uint32_t>(lrW) * 2, static_cast<uint32_t>(lrH) * 2, VK_FORMAT_R8G8B8A8_UNORM,
+        if (!MakeImage(srHr_[i], static_cast<uint32_t>(srOutW_), static_cast<uint32_t>(srOutH_), VK_FORMAT_R8G8B8A8_UNORM,
                        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)) return false;
         imgs.push_back(srHr_[i].img);
     }
+    // Ảnh HR cũ (nếu có trong cache) trỏ vào ảnh đã hủy: xóa khỏi cache.
+    for (auto it = ahb_.begin(); it != ahb_.end();) { if (it->second.internal) it = ahb_.erase(it); else ++it; }
     if (!TransitionToGeneral(imgs)) return false;
-    // Buffer tĩnh gắn 1 lần vào set riêng của SR (binding 4 = vào, 5 = ra).
     VkDescriptorBufferInfo bi[2] = {{srIn_.buf, 0, VK_WHOLE_SIZE}, {srOut_.buf, 0, VK_WHOLE_SIZE}};
     VkWriteDescriptorSet w[2];
     for (int i = 0; i < 2; ++i) {
@@ -1749,9 +1756,9 @@ bool Pipeline::SrInit(AAssetManager* assets, int lrW, int lrH, float inScale, in
         w[i].pBufferInfo = &bi[i];
     }
     vkUpdateDescriptorSets(dev_, 2, w, 0, nullptr);
-    srLrW_ = lrW; srLrH_ = lrH;
+    srLrW_ = mW; srLrH_ = mH;
     srReady_ = true;
-    LOGI("SR sẵn sàng: %dx%d -> %dx%d", lrW, lrH, lrW * 2, lrH * 2);
+    LOGI("SR sẵn sàng: x%d model %dx%d, nguồn %dx%d, vùng (%d,%d), ra %dx%d", scale, mW, mH, srcW, srcH, cropX, cropY, srOutW_, srOutH_);
     return true;
 }
 
@@ -1773,9 +1780,9 @@ uint8_t* Pipeline::SrOut(size_t* bytes) {
 bool Pipeline::SrRecord(AHardwareBuffer* lr, VkPipeline pipe, bool post, int slot) {
     Ahb* a = ImportAhb(lr);
     if (!a) return false;
-    if (static_cast<int>(a->w) != srLrW_ || static_cast<int>(a->h) != srLrH_) {
-        return FailMsg("khung chụp " + std::to_string(a->w) + "x" + std::to_string(a->h) + " khác cỡ model SR " +
-                       std::to_string(srLrW_) + "x" + std::to_string(srLrH_));
+    if (static_cast<int>(a->w) != srSrcW_ || static_cast<int>(a->h) != srSrcH_) {
+        return FailMsg("khung chụp " + std::to_string(a->w) + "x" + std::to_string(a->h) + " khác cỡ nguồn SR " +
+                       std::to_string(srSrcW_) + "x" + std::to_string(srSrcH_));
     }
     Img& hr = srHr_[slot];
     VkDescriptorImageInfo ii[2] = {{sampler_, a->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
@@ -1790,14 +1797,15 @@ bool Pipeline::SrRecord(AHardwareBuffer* lr, VkPipeline pipe, bool post, int slo
     vkUpdateDescriptorSets(dev_, post ? 2 : 1, w, 0, nullptr);
 
     struct SrPC {
-        int32_t lrW, lrH, hrW, hrH, words, pad0;
+        int32_t lrW, lrH, outW, outH, words, scale;
         float inScale, outScale;
-        int32_t inZp, outZp, p[6];
+        int32_t inZp, outZp, cropX, cropY, margin, ramp, p5, p6;
     } pc{};
     static_assert(sizeof(SrPC) == 64, "SrPC phải 64 byte");
-    pc.lrW = srLrW_; pc.lrH = srLrH_; pc.hrW = srLrW_ * 2; pc.hrH = srLrH_ * 2;
+    pc.lrW = srLrW_; pc.lrH = srLrH_; pc.outW = srOutW_; pc.outH = srOutH_; pc.scale = srScale_;
     pc.words = static_cast<int32_t>((3ll * srLrW_ * srLrH_ + 3) / 4);
     pc.inScale = srInScale_; pc.outScale = srOutScale_; pc.inZp = srInZp_; pc.outZp = srOutZp_;
+    pc.cropX = srCropX_; pc.cropY = srCropY_; pc.margin = srMargin_; pc.ramp = srRamp_;
 
     VK_TRY(vkResetCommandBuffer(cbSr_, 0));
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -1807,7 +1815,7 @@ bool Pipeline::SrRecord(AHardwareBuffer* lr, VkPipeline pipe, bool post, int slo
     vkCmdBindPipeline(cbSr_, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
     vkCmdBindDescriptorSets(cbSr_, VK_PIPELINE_BIND_POINT_COMPUTE, pl_, 0, 1, &dsSr_, 0, nullptr);
     vkCmdPushConstants(cbSr_, pl_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(pc), &pc);
-    if (post) vkCmdDispatch(cbSr_, (pc.hrW + 7) / 8, (pc.hrH + 7) / 8, 1);
+    if (post) vkCmdDispatch(cbSr_, (pc.outW + 7) / 8, (pc.outH + 7) / 8, 1);
     else vkCmdDispatch(cbSr_, (pc.words + 63) / 64, 1, 1);
     CmdRelease(cbSr_, a);
     // Kết quả ra bộ nhớ chung (CPU đọc) hoặc ảnh HR (GPU đọc ở lần gửi sau).

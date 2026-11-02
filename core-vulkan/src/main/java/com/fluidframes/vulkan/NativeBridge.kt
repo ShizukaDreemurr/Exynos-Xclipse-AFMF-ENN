@@ -33,7 +33,7 @@ internal object NativeBridge {
     @JvmStatic external fun nativeDoneSeq(handle: Long): Long
     @JvmStatic external fun nativePresentReal(handle: Long, cur: HardwareBuffer): Boolean
     @JvmStatic external fun nativeStats(handle: Long, out: FloatArray)
-    @JvmStatic external fun nativeSrInit(handle: Long, assets: AssetManager, w: Int, h: Int, inScale: Float, inZp: Int, outScale: Float, outZp: Int): Boolean
+    @JvmStatic external fun nativeSrInit(handle: Long, assets: AssetManager, mw: Int, mh: Int, scale: Int, srcW: Int, srcH: Int, cropX: Int, cropY: Int, inScale: Float, inZp: Int, outScale: Float, outZp: Int, margin: Int, ramp: Int): Boolean
     @JvmStatic external fun nativeSrIn(handle: Long): ByteBuffer?
     @JvmStatic external fun nativeSrOut(handle: Long): ByteBuffer?
     @JvmStatic external fun nativeSrPre(handle: Long, lr: HardwareBuffer): Boolean

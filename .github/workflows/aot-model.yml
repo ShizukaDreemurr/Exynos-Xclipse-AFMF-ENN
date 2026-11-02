@@ -56,7 +56,7 @@ jobs:
         working-directory: models
         continue-on-error: true
         run: |
-          LD_PRELOAD=$SHIM python compile_sr_trained.py weights/sr_x2_1170x540_raw.tflite > /tmp/srt.log 2>&1 || true
+          for f in weights/sr_x2_1170x540_raw.tflite weights/sr_x1_1536x704_raw.tflite; do LD_PRELOAD=$SHIM python compile_sr_trained.py $f >> /tmp/srt.log 2>&1 || true; done
           echo "::notice title=srtrained::$(tr "\r" "\n" < /tmp/srt.log | grep -E "SRRESULT|rror" | cut -c1-300 | tr '\n' '|')"
       - name: Publish compiled models
         if: success()

@@ -86,7 +86,10 @@ public:
     // --- Upscale SR x2 trên NPU: GPU xếp tensor int8 -> (Kotlin chạy NPU) -> GPU cộng bilinear + pixel-shuffle ra ảnh HR ---
     // Ảnh HR nằm trong bộ nhớ riêng; "token" là 1 HardwareBuffer nhỏ do Kotlin cấp, dùng làm khóa để các hàm Begin/GpuAsync/NnPre
     // nhận ảnh HR y như nhận khung chụp (ImportAhb tra theo id của token).
-    bool SrInit(AAssetManager* assets, int lrW, int lrH, float inScale, int inZp, float outScale, int outZp);
+    // scale 2: ảnh nguồn = đúng cỡ model (srcW=mW), ra 2x. scale 1: model chạy trên vùng mW x mH tại (cropX,cropY) của ảnh nguồn srcW x srcH;
+    // ngoài vùng đó giữ nguyên ảnh gốc (tránh HUD game ở viền). margin/ramp (điểm ảnh model): viền không xử lý và đoạn chuyển mềm.
+    bool SrInit(AAssetManager* assets, int mW, int mH, int scale, int srcW, int srcH, int cropX, int cropY,
+                float inScale, int inZp, float outScale, int outZp, int margin, int ramp);
     uint8_t* SrIn(size_t* bytes);   // int8 NCHW [1,3,lrH,lrW]
     uint8_t* SrOut(size_t* bytes);  // int8 NCHW [1,12,lrH,lrW]
     bool SrPre(AHardwareBuffer* lr);
@@ -221,7 +224,8 @@ private:
     VkFence fenceSr_ = VK_NULL_HANDLE;
     Buf srIn_, srOut_;
     Img srHr_[kSrRing];
-    int srLrW_ = 0, srLrH_ = 0;
+    int srLrW_ = 0, srLrH_ = 0, srScale_ = 2, srSrcW_ = 0, srSrcH_ = 0, srCropX_ = 0, srCropY_ = 0, srMargin_ = 0, srRamp_ = 1;
+    int srOutW_ = 0, srOutH_ = 0;
     float srInScale_ = 1.f / 255.f, srOutScale_ = 1.f;
     int srInZp_ = -128, srOutZp_ = 0;
     bool srReady_ = false;

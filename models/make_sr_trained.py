@@ -26,7 +26,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pt", required=True); ap.add_argument("--videos", required=True)
     ap.add_argument("--size", default="1170x540"); ap.add_argument("--out", default="out_sr_trained")
-    ap.add_argument("--compile", action="store_true"); ap.add_argument("--raw", default="")
+    ap.add_argument("--compile", action="store_true"); ap.add_argument("--raw", default=""); ap.add_argument("--mode", default="x2")
     a = ap.parse_args(); os.makedirs(a.out, exist_ok=True)
     W, H = (int(v) for v in a.size.split("x"))
     import tensorflow as tf
@@ -43,7 +43,10 @@ def main():
     tr, te = [], []
     for v in a.videos.split(","):
         t1, t2 = crops(v, 400, 0.1, 256); tr += t1; te += t2
-    lr = lambda hr: cv2.resize(hr, (hr.shape[1] // 2, hr.shape[0] // 2), interpolation=cv2.INTER_AREA)
+    if a.mode == "x1":   # đầu vào = ảnh bị làm mờ (thu x2 rồi phóng lại); cùng cỡ với đích
+        lr = lambda hr: cv2.resize(cv2.resize(hr, (hr.shape[1] // 2, hr.shape[0] // 2), interpolation=cv2.INTER_AREA), (hr.shape[1], hr.shape[0]), interpolation=cv2.INTER_LINEAR)
+    else:
+        lr = lambda hr: cv2.resize(hr, (hr.shape[1] // 2, hr.shape[0] // 2), interpolation=cv2.INTER_AREA)
     tr = [lr(x) for x in tr]; te_hr = te; te = [lr(x) for x in te]
     ph, pw = tr[0].shape[:2]
     m = build(ph, pw)   # xây ở cỡ mảnh để hiệu chỉnh, rồi dựng lại đúng cỡ khung
@@ -72,6 +75,9 @@ def main():
         q = np.clip(np.round(x.astype(np.float32).transpose(2, 0, 1)[None] / 255 / si + zi), -128, 127).astype(np.int8)
         ip.set_tensor(di["index"], q); ip.invoke()
         r = (ip.get_tensor(do["index"]).astype(np.float32) - zo) * so
+        if a.mode == "x1":
+            up = x.astype(np.float32).transpose(2, 0, 1) / 255
+            return np.clip(up + r[0], 0, 1), up
         r = r[0].reshape(3, 2, 2, x.shape[0], x.shape[1]).transpose(0, 3, 1, 4, 2).reshape(3, 2 * x.shape[0], 2 * x.shape[1])
         up = cv2.resize(x.astype(np.float32) / 255, (2 * x.shape[1], 2 * x.shape[0]), interpolation=cv2.INTER_LINEAR).transpose(2, 0, 1)
         return np.clip(up + r, 0, 1), up
@@ -91,8 +97,8 @@ def main():
     d2i, d2o = ip2.get_input_details()[0], ip2.get_output_details()[0]
     q = dict(in_scale=float(d2i["quantization"][0]), in_zp=int(d2i["quantization"][1]), out_scale=float(d2o["quantization"][0]), out_zp=int(d2o["quantization"][1]), w=W, h=H, psnr_i8=float(np.mean(pq)), psnr_bilinear=float(np.mean(pb)))
     print("QUANT", json.dumps(q))
-    raw = os.path.join(a.out, f"sr_x2_{W}x{H}_raw.tflite"); open(raw, "wb").write(blob)
-    json.dump(q, open(os.path.join(a.out, f"sr_x2_{W}x{H}.json"), "w"))
+    raw = os.path.join(a.out, f"sr_{a.mode}_{W}x{H}_raw.tflite"); open(raw, "wb").write(blob)
+    json.dump(q, open(os.path.join(a.out, f"sr_{a.mode}_{W}x{H}.json"), "w"))
     print("size", len(blob))
 if __name__ == "__main__":
     main()
