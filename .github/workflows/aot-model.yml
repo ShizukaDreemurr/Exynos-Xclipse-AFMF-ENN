@@ -43,7 +43,7 @@ jobs:
         if: success()
         run: |
           mkdir -p /tmp/pm/models && cd models
-          for n in 320 384 480 640 960 1280 probe_nchw probe_nhwc; do f=$(find out_models/c$n -name '*Samsung*' -name '*.tflite' | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
+          for n in 192 256 320 384 480 640 960 1280 probe_nchw probe_nhwc; do f=$(find out_models/c$n -name '*Samsung*' -name '*.tflite' | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
           for n in op_resize op_gather op_gather_warp op_gather_nd op_shift25 op_gwarp_640 op_gwarp_960 op_gwarp_1280; do f=$(find out_ops/c_${n}_1 out_ops/c_${n}_0 -name '*Samsung*' -name '*.tflite' 2>/dev/null | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
           ls -l /tmp/pm/models
           cd /tmp/pm && git init -q && git checkout -q -b prebuilt-models

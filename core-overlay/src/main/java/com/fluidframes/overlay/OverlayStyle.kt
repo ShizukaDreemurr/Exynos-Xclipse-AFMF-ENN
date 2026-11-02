@@ -112,6 +112,33 @@ internal class OverlayUi(private val context: Context) {
         return row
     }
 
+    /** Danh sách thả xuống: bấm để mở/đóng, chọn một mục. */
+    fun dropdown(labels: List<String>, selected: Int, onSelect: (Int) -> Unit): View {
+        val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val head = text("", 13f, Color.WHITE, true).apply {
+            background = OS.pill(OS.CARD2, px(48).toFloat())
+            setPadding(px(16), px(10), px(16), px(10))
+        }
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+        var cur = selected.coerceIn(0, labels.size - 1)
+        fun title() { head.text = labels[cur] + (if (list.visibility == View.VISIBLE) "   ▲" else "   ▼") }
+        labels.forEachIndexed { i, l ->
+            list.addView(text(l, 13f, if (i == cur) Color.WHITE else OS.MUTED, i == cur).apply {
+                setPadding(px(16), px(9), px(16), px(9))
+                setOnClickListener {
+                    cur = i; list.visibility = View.GONE; title(); onSelect(i)
+                    for (k in 0 until list.childCount) (list.getChildAt(k) as TextView).apply {
+                        setTextColor(if (k == cur) Color.WHITE else OS.MUTED)
+                    }
+                }
+            })
+        }
+        head.setOnClickListener { list.visibility = if (list.visibility == View.VISIBLE) View.GONE else View.VISIBLE; title() }
+        title()
+        box.addView(head); box.addView(list)
+        return box
+    }
+
     /** Nhóm lựa chọn dạng viên thuốc (thay cho nút xoay vòng). */
     fun segmented(labels: List<String>, selected: Int, onSelect: (Int) -> Unit): View {
         val box = LinearLayout(context).apply {

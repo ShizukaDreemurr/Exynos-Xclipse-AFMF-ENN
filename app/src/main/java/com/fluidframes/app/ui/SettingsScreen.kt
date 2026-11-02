@@ -7,7 +7,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import android.content.Intent
@@ -20,8 +28,7 @@ import com.fluidframes.overlay.FluidSettings
 import com.fluidframes.telemetry.FlowBackend
 import com.fluidframes.telemetry.ProcTier
 
-private val tiers = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360, ProcTier.P270, ProcTier.P216, ProcTier.P180)
-private val tierLabels = listOf("Mặc định", "720p", "540p", "360p")
+private val tiers = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360, ProcTier.P270, ProcTier.P216, ProcTier.P180, ProcTier.P100, ProcTier.P70)
 private val backends = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
 private val backendLabels = listOf("Tự động", "NPU", "GPU", "Tắt")
 private val backendDesc = mapOf(
@@ -34,7 +41,7 @@ private val backendDesc = mapOf(
 private data class Preset(val name: String, val desc: String, val tier: ProcTier, val backend: FlowBackend)
 
 private val presets = listOf(
-    Preset("Cân bằng", "540p, NPU nếu có (không tự đổi giữa chừng)", ProcTier.AUTO, FlowBackend.AUTO),
+    Preset("Cân bằng", "130p, NPU nếu có (không tự đổi giữa chừng)", ProcTier.AUTO, FlowBackend.AUTO),
     Preset("Chất lượng", "720p, ưu tiên NPU", ProcTier.P720, FlowBackend.NPU),
     Preset("Tiết kiệm", "360p, GPU, mát máy", ProcTier.P360, FlowBackend.GPU),
 )
@@ -80,8 +87,13 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
 
             FFCard {
                 SectionTitle("Độ phân giải xử lý")
-                Segmented(tierLabels, tiers.indexOf(settings.tier).coerceAtLeast(0)) {
-                    onChange(settings.copy(tier = tiers[it]))
+                var open by remember { mutableStateOf(false) }
+                Box {
+                    Text("${settings.tier.label}  ${if (open) "▲" else "▼"}", style = MaterialTheme.typography.titleMedium,
+                        color = FF.c.text, modifier = Modifier.fillMaxWidth().clickable { open = true }.padding(vertical = 12.dp))
+                    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                        tiers.forEach { t -> DropdownMenuItem(text = { Text(t.label) }, onClick = { open = false; onChange(settings.copy(tier = t)) }) }
+                    }
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("Thấp hơn = nhanh và mát hơn nhưng chuyển động kém mịn. Không còn tự hạ bậc: app giữ đúng mức bạn chọn (chỉ tự dừng khi máy quá nóng mức nguy hiểm).",

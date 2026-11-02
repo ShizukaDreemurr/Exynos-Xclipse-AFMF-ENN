@@ -28,10 +28,10 @@ class Governor {
     fun decide(i: Input): Decision {
         if (!i.enabled || i.prefBackend == FlowBackend.OFF) return pass()
         if (i.thermalStatus >= 4) return pass() // CRITICAL trở lên: bảo vệ phần cứng
-        val tier = if (i.prefTier == ProcTier.AUTO) ProcTier.P540 else i.prefTier
+        val tier = if (i.prefTier == ProcTier.AUTO) ProcTier.P180 else i.prefTier
         val nn = i.prefBackend != FlowBackend.GPU && i.npuAvailable
         return Decision(if (nn) Mode.FLOW_NN else Mode.FLOW_GPU, tier)
     }
 
-    private fun pass() = Decision(Mode.PASSTHROUGH, ProcTier.P540)
+    private fun pass() = Decision(Mode.PASSTHROUGH, ProcTier.P180)
 }

@@ -43,7 +43,7 @@ class FramePipeline(
     private var worker: Thread? = null
 
     @Volatile private var lastMode = Mode.PASSTHROUGH
-    @Volatile private var lastTier = ProcTier.P540
+    @Volatile private var lastTier = ProcTier.P180
     @Volatile private var backendLabel = "-"
     @Volatile private var lastError = ""
     @Volatile var hostLabel = "?"
@@ -67,7 +67,7 @@ class FramePipeline(
         backendFailed = true; backendLabel = label
         if (!permanent) backendLoadedFor = 0   // thử lại sẽ nạp lại model
     }
-    private fun wantLong(st: com.fluidframes.overlay.FluidSettings) = if (st.tier == ProcTier.AUTO) ProcTier.P540.longSide else st.tier.longSide
+    private fun wantLong(st: com.fluidframes.overlay.FluidSettings) = if (st.tier == ProcTier.AUTO) ProcTier.P180.longSide else st.tier.longSide
     private var overlayShown = true
     private var passthroughStreak = 0
     private var lastWarpMs = 0f
@@ -319,7 +319,7 @@ class FramePipeline(
         passthroughStreak = 0
         setOverlay(true)
         if (native.procW == 0) {
-            val (w, h) = NativePipeline.procSize(ProcTier.P540.longSide, cur.width, cur.height)
+            val (w, h) = NativePipeline.procSize(ProcTier.P180.longSide, cur.width, cur.height)
             native.configure(w, h)
         }
         stats.framesPassthrough.incrementAndGet()
@@ -337,7 +337,7 @@ class FramePipeline(
         }
         if (overlayShown) {
             if (native.procW == 0) {
-                val (w, h) = NativePipeline.procSize(ProcTier.P540.longSide, cur.width, cur.height)
+                val (w, h) = NativePipeline.procSize(ProcTier.P180.longSide, cur.width, cur.height)
                 native.configure(w, h)
             }
             if (native.presentReal(cur.hardwareBuffer)) stats.outFps.tick()

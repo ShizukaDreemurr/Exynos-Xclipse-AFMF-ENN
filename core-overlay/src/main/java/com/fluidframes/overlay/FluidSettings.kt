@@ -6,7 +6,7 @@ import com.fluidframes.telemetry.ProcTier
 
 data class FluidSettings(
     val enabled: Boolean = true,
-    val tier: ProcTier = ProcTier.AUTO,
+    val tier: ProcTier = ProcTier.AUTO,   // AUTO = 130p
     val backend: FlowBackend = FlowBackend.AUTO,
     val showHud: Boolean = true,
     /** Thử nghiệm: đánh dấu cửa sổ video là FLAG_SECURE để (có thể) bị loại khỏi MediaProjection. */

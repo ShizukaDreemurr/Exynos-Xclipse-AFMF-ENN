@@ -136,11 +136,8 @@ class MenuOverlay(
             settings = settings.copy(onlyEnabledApps = it); onChange(settings)
         })
         col.addView(ui.caption("Độ phân giải xử lý (nhỏ hơn = NPU nhanh, ít điện, nhưng flow thô hơn)"))
-        col.addView(ui.segmented(listOf("Mặc định", "720p", "540p", "360p"), tierIndex(settings.tier).takeIf { it < 4 } ?: -1) {
+        col.addView(ui.dropdown(TIERS.map { it.label }, tierIndex(settings.tier)) {
             settings = settings.copy(tier = TIERS[it]); onChange(settings)
-        })
-        col.addView(ui.segmented(listOf("200p", "160p", "130p"), (tierIndex(settings.tier) - 4).takeIf { it in 0..2 } ?: -1) {
-            settings = settings.copy(tier = TIERS[it + 4]); onChange(settings)
         })
         col.addView(ui.caption("Công cụ tính flow"))
         col.addView(ui.segmented(listOf("Tự động", "NPU", "GPU", "Tắt"), backendIndex(settings.backend)) {
@@ -251,7 +248,7 @@ class MenuOverlay(
             HudLines.LOAD to "Dòng: CPU / GPU % và MHz",
             HudLines.ERROR to "Dòng: lỗi (nếu có)",
         )
-        val TIERS = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360, ProcTier.P270, ProcTier.P216, ProcTier.P180)
+        val TIERS = listOf(ProcTier.AUTO, ProcTier.P720, ProcTier.P540, ProcTier.P360, ProcTier.P270, ProcTier.P216, ProcTier.P180, ProcTier.P100, ProcTier.P70)
         val BACKENDS = listOf(FlowBackend.AUTO, FlowBackend.NPU, FlowBackend.GPU, FlowBackend.OFF)
     }
 }

@@ -8,13 +8,15 @@ enum class Mode { PASSTHROUGH, FLOW_GPU, FLOW_NN }
  * cạnh ngắn suy ra theo tỉ lệ màn hình và làm tròn bội số 32. AUTO do Governor chọn.
  */
 enum class ProcTier(val label: String, val longSide: Int) {
-    AUTO("Mặc định (540p)", 0),
+    AUTO("Mặc định (130p)", 0),
     P720("720p", 1280),
     P540("540p", 960),
     P360("360p", 640),
     P270("200p", 480),
     P216("160p", 384),
     P180("130p", 320),
+    P100("100p", 256),
+    P70("70p", 192),
 }
 
 enum class FlowBackend(val label: String) {
