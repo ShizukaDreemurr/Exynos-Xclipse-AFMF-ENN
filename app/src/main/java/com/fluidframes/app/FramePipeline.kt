@@ -56,6 +56,18 @@ class FramePipeline(
     private var backendChoice: FlowBackend? = null
     private var backendLoadedFor = 0     // longSide đã nạp
     private var backendFailed = false
+    // Lỗi NPU nhớ THEO TỪNG model (longSide): đổi tier/độ phân giải là thử lại ngay; lỗi suy luận tự thử lại sau 6 giây.
+    private var failLong = 0
+    private var failUntilMs = 0L          // 0 = lỗi nạp model (giữ tới khi đổi tier/backend)
+    private fun failedFor(long: Int) = failLong == long && (failUntilMs == 0L || android.os.SystemClock.elapsedRealtime() < failUntilMs)
+    private fun markFail(long: Int, permanent: Boolean, label: String) {
+        if (long == 0) { backendLabel = label; return }   // đã đang chờ thử lại
+        failLong = long
+        failUntilMs = if (permanent) 0L else android.os.SystemClock.elapsedRealtime() + 6000L
+        backendFailed = true; backendLabel = label
+        if (!permanent) backendLoadedFor = 0   // thử lại sẽ nạp lại model
+    }
+    private fun wantLong(st: com.fluidframes.overlay.FluidSettings) = if (st.tier == ProcTier.AUTO) ProcTier.P540.longSide else st.tier.longSide
     private var overlayShown = true
     private var passthroughStreak = 0
     private var lastWarpMs = 0f
@@ -98,6 +110,9 @@ class FramePipeline(
         }
         if (on(4)) lines += r("Tần số quét", "%.0fHz".format(curHz()), "")
         if (on(8)) lines += r("Backend", backendLabel + if (overlayShown) "" else " (overlay tắt)", if (backendLabel.contains("NPU", true)) G else "")
+        if (on(16) && lastMode == Mode.FLOW_NN) (backend as? com.fluidframes.enn.LiteRtBackend)?.let {
+            lines += r("NPU vào/chạy/ra ms", "%.1f/%.1f/%.1f".format(it.copyInMs, it.runMs, it.copyOutMs), if (it.runMs + it.copyInMs + it.copyOutMs < 1000f / src.coerceAtLeast(20f)) G else Y)
+        }
         if (on(16)) lines += r("pre/flow/warp ms", "%.1f/%.1f/%.1f".format(s.preMs.value, s.flowMs.value, s.warpMs.value), "")
         if (on(32)) lines += r("Chờ/xử lý ms", "%.1f/%.1f".format(idleEma.value, loopProcEma.value), "")
         if (on(64)) {
@@ -371,7 +386,7 @@ class FramePipeline(
                 var ms = -1f
                 if (waited && inp != null && out != null && b != null) ms = b.run(inp, out)
                 if (ms < 0f) {
-                    if (waited) { backendFailed = true; backendLabel = "lỗi suy luận → GPU" }
+                    if (waited) markFail(backendLoadedFor, false, "lỗi suy luận NPU → GPU (thử lại sau 6s)")
                     if (out != null) { out.clear(); out.put(ByteArray(out.capacity())); out.clear() }  // flow 0: trộn 2 khung, không méo
                 } else stats.flowMs.add(ms)
                 seq = native.nnPost(job.slot)
@@ -402,14 +417,14 @@ class FramePipeline(
             backend = BackendFactory.create(context, choice)
             backendChoice = choice
             backendLoadedFor = 0
-            backendFailed = false
+            backendFailed = false; failLong = 0
         }
         val b = backend ?: return false
-        if (backendFailed) return false
+        if (failedFor(longSide)) return false
+        backendFailed = false
         if (backendLoadedFor != longSide) {
             if (!b.load(longSide, procW, procH)) {
-                backendFailed = true
-                backendLabel = "không nạp được models/flow_$longSide.tflite → GPU"
+                markFail(longSide, true, "không nạp được flow_$longSide.tflite → GPU (đổi tier để thử lại)")
                 return false
             }
             backendLoadedFor = longSide
@@ -445,7 +460,7 @@ class FramePipeline(
 
         // npuAvailable chỉ true khi đã nạp được (hoặc chưa thử và có backend).
         // Model NN hiện chỉ có trọng số ngẫu nhiên => flow rác. Chỉ bật khi có model đã huấn luyện.
-        val npuCandidate = NN_FLOW_TRAINED && st.backend != FlowBackend.GPU && st.backend != FlowBackend.OFF && !backendFailed
+        val npuCandidate = NN_FLOW_TRAINED && st.backend != FlowBackend.GPU && st.backend != FlowBackend.OFF && !failedFor(wantLong(st))
         val d = governor.decide(
             Governor.Input(
                 enabled = st.enabled,
@@ -558,8 +573,7 @@ class FramePipeline(
             inferMs = if (input != null && output != null) backend!!.run(input, output) else -1f
             if (inferMs < 0f) {
                 // NN lỗi giữa chừng: tính lại bằng block-match GPU cho frame này và tắt NN.
-                backendFailed = true
-                backendLabel = "lỗi suy luận → GPU"
+                markFail(backendLoadedFor, false, "lỗi suy luận NPU → GPU (thử lại sau 6s)")
                 useNn = false
                 inferMs = 0f
                 res = native.begin(prev.hardwareBuffer, cur.hardwareBuffer, nn = false, blockMatch = true)
