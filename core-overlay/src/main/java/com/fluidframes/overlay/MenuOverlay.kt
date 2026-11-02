@@ -28,6 +28,8 @@ class MenuOverlay(
     private val onRecordToggle: () -> String,
     private val isRecording: () -> Boolean,
     private val foreground: () -> String,
+    private val onBench: () -> String = { "" },
+    private val isBench: () -> Boolean = { false },
 ) {
     private var settings = initial
     private val dp = host.context.resources.displayMetrics.density
@@ -194,6 +196,16 @@ class MenuOverlay(
             recBtn.text = recLabel()
         } as TextView
         col.addView(recBtn)
+        col.addView(View(ctx), LinearLayout.LayoutParams(1, ui.px(8)))
+        lateinit var benchBtn: TextView
+        fun benchLabel() = if (isBench()) "■  Hủy đo điện" else "⚡  Đo điện A/B (Tắt/GPU/NPU)"
+        benchBtn = ui.button(benchLabel(), danger = false) {
+            val msg = onBench()
+            if (msg.isNotEmpty()) Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+            benchBtn.text = benchLabel()
+            if (isBench()) closePanel()
+        } as TextView
+        col.addView(benchBtn)
         col.addView(View(ctx), LinearLayout.LayoutParams(1, ui.px(8)))
         col.addView(ui.button("Dừng Xclipse ENN-SS", danger = true) { closePanel(); onStop() })
 

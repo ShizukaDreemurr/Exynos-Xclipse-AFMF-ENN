@@ -59,6 +59,12 @@ class ProjectionService : Service() {
                     if (pw.isNotEmpty()) txt = if (txt.isEmpty()) pw else txt + "\n" + pw
                 }
                 if (mask and com.fluidframes.overlay.HudLines.LOAD != 0) sysLoad.rows().joinToString("\n").let { txt = if (txt.isEmpty()) it else txt + "\n" + it }
+                readPower()?.let { p ->
+                    bench.noteTemp(p.tmp)
+                    if (bench.active) bench.tick(android.os.SystemClock.elapsedRealtime(), p.w, p.tmp, p.ma, it.live().outFps)
+                }
+                val bs = bench.status.ifEmpty { bench.result }
+                if (bs.isNotEmpty()) txt = (if (txt.isEmpty()) "" else txt + "\n") + bs.lines().joinToString("\n") { l -> com.fluidframes.overlay.HudOverlay.row("Đo điện", l) }
                 overlay?.setHudText(txt); live.value = it.live()
             }
             main.postDelayed(this, 500)
@@ -67,6 +73,33 @@ class ProjectionService : Service() {
 
     /** Tạo overlay + pipeline. Gọi sau khi capture đã chạy. false = không dựng được. */
     /** Pin %, nhiệt pin, công suất tức thời (W) từ BatteryManager. */
+    private class Pw(val lvl: Int, val tmp: Float, val ma: Float, val w: Float, val plugged: Boolean)
+    private fun readPower(): Pw? = try {
+        val b = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val lvl = b?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val tmp = (b?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f
+        val mv = b?.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+        val plugged = (b?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        val ua = getSystemService(android.os.BatteryManager::class.java).getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CURRENT_NOW)
+        val ma = if (kotlin.math.abs(ua) > 20000) ua / 1000f else ua.toFloat()
+        Pw(lvl, tmp, kotlin.math.abs(ma), kotlin.math.abs(ma) * mv / 1_000_000f, plugged)
+    } catch (_: Throwable) { null }
+
+    val bench = PowerBench()
+
+    /** Bấm nút "Đo điện": bắt đầu / hủy. Trả lời nhắn cho Toast. */
+    private fun benchToggle(): String {
+        if (bench.active) { bench.cancel(); return "Đã hủy đo điện." }
+        val p = readPower() ?: return "Không đọc được pin."
+        if (p.plugged) return "Rút sạc ra trước (đang cắm sạc thì số đo sai)."
+        val fg = com.fluidframes.app.telemetry.TelemetryRecorder.foreground()
+        if (fg.isEmpty()) return "Chuyển vào game một lần rồi mở lại menu."
+        (overlay?.settings)?.let { st -> if (st.onlyEnabledApps && fg !in st.enabledApps) return "App \"$fg\" chưa bật nội suy trong menu: bật nó rồi đo lại." }
+        bench.noteTemp(p.tmp)
+        bench.start(android.os.SystemClock.elapsedRealtime(), p.tmp)
+        return "Bắt đầu đo ~2 phút: đóng menu, quay lại GAME và cứ chơi bình thường, đừng đổi cài đặt. Kết quả hiện trên HUD."
+    }
+
     private fun powerLine(): String = try {
         val b = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val lvl = b?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
@@ -103,7 +136,7 @@ class ProjectionService : Service() {
             context = this,
             ring = ring,
             native = np,
-            settings = { overlay?.settings ?: store.load() },
+            settings = { (overlay?.settings ?: store.load()).let { st -> bench.forced?.let { f -> st.copy(backend = f) } ?: st } },
             thermal = thermal,
             onOverlayVisible = { v -> main.post { overlay?.setVideoVisible(v) } },
         )
@@ -136,6 +169,8 @@ class ProjectionService : Service() {
                 } else "Chưa biết app nào đang chạy: bật Trợ năng rồi chuyển vào game một lần."
             },
             isRecording = { com.fluidframes.app.telemetry.TelemetryRecorder.isRecording },
+            onBench = ::benchToggle,
+            isBench = { bench.active },
             foreground = { com.fluidframes.app.telemetry.TelemetryRecorder.foreground() },
         ).also { it.show() }
         fp.start()
