@@ -77,11 +77,18 @@ void main() {
     vec3 a = texture(uPrev, uv + fl.xy).rgb;
     vec3 b = texture(uCur, uv + fl.zw).rgb;
     float err = maxAbs(a - b);
-    for (int i = 1; i < 5; ++i) {
-        vec3 ai = texture(uPrev, uv + cand[i].xy).rgb;
-        vec3 bi = texture(uCur, uv + cand[i].zw).rgb;
-        float ei = maxAbs(ai - bi);
-        if (ei < err - 0.01) { err = ei; fl = cand[i]; a = ai; b = bi; }
+    // Flow lân cận giống flow giữa (< ~0.05 px) thì kết quả y hệt: bỏ qua, đỡ 2 lần đọc ảnh mỗi ứng viên.
+    // Đã khớp tốt (err nhỏ) thì cũng không cần thử thêm.
+    float same = 0.05 / float(max(pc.srcW, pc.srcH));
+    if (err > 0.012) {
+        for (int i = 1; i < 5; ++i) {
+            vec4 d = abs(cand[i] - cand[0]);
+            if (max(max(d.x, d.y), max(d.z, d.w)) < same) continue;
+            vec3 ai = texture(uPrev, uv + cand[i].xy).rgb;
+            vec3 bi = texture(uCur, uv + cand[i].zw).rgb;
+            float ei = maxAbs(ai - bi);
+            if (ei < err - 0.01) { err = ei; fl = cand[i]; a = ai; b = bi; }
+        }
     }
 
     // Chống "bóng ma" HUD: nếu điểm lấy mẫu rơi vào vùng tĩnh (HUD/nút) mà pixel này không tĩnh
