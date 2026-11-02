@@ -7,8 +7,8 @@ import numpy as np, tensorflow as tf
 L = tf.keras.layers
 
 
-def build_student(h, w, ch=(16, 24, 32), head=32):
-    inp = tf.keras.Input(shape=(6, h, w), batch_size=None if False else 1, name="input")
+def build_student(h, w, ch=(16, 24, 32), head=32, bs=1):
+    inp = tf.keras.Input(shape=(6, h, w), batch_size=bs, name="input")
     x = L.Permute((2, 3, 1))(inp)
     x = L.Rescaling(1.0, offset=-0.5)(x)
     for c in ch:
@@ -59,29 +59,42 @@ def cmd_train(a):
     d = np.load(a.data); X, Y = d["x"], d["y"]; w, h = (int(v) for v in d["size"])
     n = len(X); idx = np.random.default_rng(1).permutation(n); nv = max(20, n // 10)
     va, tr = idx[:nv], idx[nv:]
-    cw, ch_ = min(w, 320), min(h, 160)
-    student = build_student(ch_, cw)  # train trên crop (conv thuần), suy luận ở full size
-    full = build_student(h, w)
-    opt = tf.keras.optimizers.Adam(1e-3)
+    cw, chh, bs = min(w, 320), min(h, 160), 8
+    student = build_student(chh, cw, bs=bs)
+    opt = tf.keras.optimizers.Adam(tf.keras.optimizers.schedules.CosineDecay(2e-3, a.epochs * (len(tr) // bs)))
     def batch(ids, rand=True):
         xs, ys = [], []
         for i in ids:
-            if rand:
-                ox = int(np.random.randint(0, w - cw + 1) // 2 * 2); oy = int(np.random.randint(0, h - ch_ + 1) // 2 * 2)
-            else: ox = oy = 0
-            xs.append(X[i][:, oy:oy + ch_, ox:ox + cw].astype(np.float32) / 255)
-            ys.append(Y[i][:, oy // 2:(oy + ch_) // 2, ox // 2:(ox + cw) // 2].astype(np.float32))
+            ox = int(np.random.randint(0, w - cw + 1) // 2 * 2) if rand else 0
+            oy = int(np.random.randint(0, h - chh + 1) // 2 * 2) if rand else 0
+            xs.append(X[i][:, oy:oy + chh, ox:ox + cw].astype(np.float32) / 255)
+            ys.append(Y[i][:, oy // 2:(oy + chh) // 2, ox // 2:(ox + cw) // 2].astype(np.float32))
         return np.stack(xs), np.stack(ys)
     @tf.function
     def step(x, y):
         with tf.GradientTape() as t:
             p = student(x, training=True)[:, :4]
-            loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(p - y), 1) + 1e-3))  # EPE xấp xỉ
+            loss = tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(p - y), 1) + 1e-3))
         opt.apply_gradients(zip(t.gradient(loss, student.trainable_variables), student.trainable_variables)); return loss
-    bs = 8
-    student.build((bs, 6, ch_, cw))
-    # tf.function cần batch_size cố định = 1 trong Input -> dùng batch 1 lặp tích luỹ đơn giản
-    return student, full, batch, tr, va, step, opt
+    def epe(ids):
+        e = []
+        for k in range(0, len(ids) - bs + 1, bs):
+            x, y = batch(ids[k:k + bs], rand=False)
+            e.append(float(tf.reduce_mean(tf.sqrt(tf.reduce_sum(tf.square(student(x)[:, :4] - y), 1)))))
+        return float(np.mean(e))
+    def zero(ids):
+        return float(np.mean([np.sqrt((Y[i].astype(np.float32) ** 2).sum(0)).mean() for i in ids]))
+    print("EPE nếu đoán flow=0 (val):", zero(va), flush=True)
+    t0 = time.time()
+    for ep in range(a.epochs):
+        np.random.shuffle(tr); L_ = []
+        for k in range(0, len(tr) - bs + 1, bs):
+            L_.append(float(step(*batch(tr[k:k + bs]))))
+        print("epoch", ep, "loss %.3f" % np.mean(L_), "val EPE %.3f" % epe(va), "%.0fs" % (time.time() - t0), flush=True)
+    os.makedirs(a.out, exist_ok=True)
+    full = build_student(h, w, bs=1); full.set_weights(student.get_weights())
+    open(os.path.join(a.out, f"flow_{max(w, h)}_nano_raw.tflite"), "wb").write(tf.lite.TFLiteConverter.from_keras_model(full).convert())
+    student.save_weights(os.path.join(a.out, "nano.weights.h5")); print("saved", a.out)
 
 
 if __name__ == "__main__":
@@ -89,5 +102,7 @@ if __name__ == "__main__":
     d = sp.add_parser("data"); d.add_argument("--videos", nargs="+"); d.add_argument("--size", default="640x288")
     d.add_argument("--pairs", type=int, default=1200); d.add_argument("--gaps", type=int, nargs="+", default=[1, 2, 3])
     d.add_argument("--ckpt", default="weights/IFRNet_S_Vimeo90K.pth"); d.add_argument("--out", required=True)
+    t = sp.add_parser("train"); t.add_argument("--data", required=True); t.add_argument("--out", required=True); t.add_argument("--epochs", type=int, default=20)
     a = ap.parse_args()
     if a.c == "data": cmd_data(a)
+    else: cmd_train(a)
