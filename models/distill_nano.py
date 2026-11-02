@@ -7,16 +7,29 @@ import numpy as np, tensorflow as tf
 L = tf.keras.layers
 
 
-def build_student(h, w, ch=(16, 24, 32), head=32, bs=1):
+def build_student(h, w, ch=(16, 24, 32), bs=1, R=3):
+    """Mã hoá chung 2 khung -> cost volume cục bộ (±R ô ở H/8, chỉ pad/slice/mul/sum) -> conv -> flow."""
     inp = tf.keras.Input(shape=(6, h, w), batch_size=bs, name="input")
     x = L.Permute((2, 3, 1))(inp)
     x = L.Rescaling(1.0, offset=-0.5)(x)
-    for c in ch:
-        x = L.Conv2D(c, 3, strides=2, padding="same", activation="relu")(x)
-    x = L.Conv2D(head, 3, padding="same", activation="relu")(x)
-    x = L.Conv2D(head, 3, padding="same", activation="relu")(x)
-    y = L.Conv2D(4, 3, padding="same")(x)
-    y = L.Rescaling(8.0)(y)  # đơn vị pixel của độ phân giải vào
+    enc = [L.Conv2D(c, 3, strides=2, padding="same", activation="relu") for c in ch]
+    def encode(t):
+        for e in enc: t = e(t)
+        return t
+    f0, f1 = encode(x[..., 0:3]), encode(x[..., 3:6])
+    pad = L.ZeroPadding2D((R, R))(f1)
+    hh, ww = h // 8, w // 8
+    vols = []
+    for dy in range(2 * R + 1):
+        for dx in range(2 * R + 1):
+            sh = L.Lambda(lambda t, dy=dy, dx=dx: t[:, dy:dy + hh, dx:dx + ww, :])(pad)
+            vols.append(L.Lambda(lambda t: tf.reduce_mean(t[0] * t[1], axis=-1, keepdims=True))([f0, sh]))
+    cv = L.Concatenate()(vols)
+    z = L.Concatenate()([cv, f0])
+    z = L.Conv2D(48, 3, padding="same", activation="relu")(z)
+    z = L.Conv2D(32, 3, padding="same", activation="relu")(z)
+    y = L.Conv2D(4, 3, padding="same")(z)
+    y = L.Rescaling(8.0)(y)
     y = L.Resizing(h // 2, w // 2, interpolation="bilinear")(y)
     mask = L.Lambda(lambda t: tf.zeros_like(t[..., :1]) + 0.5, name="mask")(y)
     y = L.Concatenate()([y, mask])
