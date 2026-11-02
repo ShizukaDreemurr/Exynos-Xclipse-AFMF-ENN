@@ -53,11 +53,14 @@ class SrBackend(private val context: Context) {
     }
 
     /** input/output: direct buffer int8 NCHW (bộ nhớ chung với GPU). Trả thời gian ms, hoặc -1 nếu lỗi. */
-    fun run(input: ByteBuffer, output: ByteBuffer): Float {
-        val m = model ?: return -1f
+    fun run(input: ByteBuffer, output: ByteBuffer, onInputCopied: (() -> Unit)? = null): Float {
+        var signaled = false
+        fun signal() { if (!signaled) { signaled = true; onInputCopied?.invoke() } }
+        val m = model ?: run { signal(); return -1f }
         return try {
             val t0 = System.nanoTime()
             input.position(0); input.get(inArr, 0, minOf(inArr.size, input.remaining()))
+            signal()   // đã chép xong tensor vào: GPU được phép ghi khung kế tiếp vào bộ nhớ chung
             wI8!!.invoke(ins[0], inArr)
             val t1 = System.nanoTime()
             synchronized(NpuEnv.npuLock) { m.run(ins, outs) }
@@ -70,6 +73,7 @@ class SrBackend(private val context: Context) {
             copyOutMs = copyOutMs * 0.85f + (t3 - t2) / 1e6f * 0.15f
             (t3 - t0) / 1e6f
         } catch (t: Throwable) {
+            signal()
             lastError = "${t.javaClass.simpleName}: ${(t.cause?.message ?: t.message ?: "").take(160)}"
             Log.e(TAG, "SR suy luận lỗi", t)
             -1f

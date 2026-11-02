@@ -81,6 +81,8 @@ class FramePipeline(
         running = true
         thermal.start()
         nnThread = thread(name = "ff-npu", isDaemon = true, priority = Thread.MAX_PRIORITY) { nnLoop() }
+        srThread = thread(name = "ff-sr", isDaemon = true, priority = Thread.MAX_PRIORITY) { srLoop() }
+        presentThread = thread(name = "ff-present", isDaemon = true, priority = Thread.MAX_PRIORITY) { presentLoop() }
         worker = thread(name = "ff-pipeline", isDaemon = true, priority = Thread.MAX_PRIORITY) { loop() }
     }
 
@@ -90,6 +92,9 @@ class FramePipeline(
         worker = null
         nnThread?.join(1500)
         nnThread = null
+        srThread?.join(1500); srThread = null
+        presentThread?.join(1500); presentThread = null
+        sr?.close(); sr = null
         thermal.stop()
         backend?.close()
         backend = null
@@ -503,13 +508,28 @@ class FramePipeline(
             SR1_IN_SCALE, SR1_IN_ZP, SR1_OUT_SCALE, SR1_OUT_ZP, 0, 32)
     }
 
-    /** Chạy upscale cho 1 khung chụp. Trả token ảnh kết quả, hoặc null (lỗi → present khung gốc). */
-    private fun srRun(mode: Int, f: FrameSlot): HardwareBuffer? {
+    // Dây chuyền 3 tầng để đạt 60 fps: [ff-pipeline: GPU xếp tensor] -> [ff-sr: NPU + GPU ghép] -> [ff-present: present].
+    private class SrJob(val frame: FrameSlot, val job: NnJob, val mode: Int)
+    private val srQueue = LinkedBlockingQueue<SrJob>()
+    private val presentQueue = LinkedBlockingQueue<HardwareBuffer>()
+    private val srInFree = Semaphore(1)       // bộ nhớ tensor vào dùng chung: chỉ 1 khung được ghi tại một thời điểm
+    private val srInflight = Semaphore(3)     // số khung đang bay tối đa (vòng ảnh HR có 8 chỗ)
+    private var lastSrJob: SrJob? = null
+    private var srThread: Thread? = null
+    private var presentThread: Thread? = null
+
+    private fun srDrain() {
+        if (srInflight.tryAcquire(3, 2, TimeUnit.SECONDS)) srInflight.release(3)
+    }
+
+    /** Tạo/đổi model SR theo chế độ. Trả cấu hình, hoặc null (lỗi → hiển thị khung gốc). */
+    private fun srPrepare(mode: Int, f: FrameSlot): SrCfg? {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now < srFailUntilMs) { srActive = false; return null }
         val cfg = srCfgFor(mode, f)
         if (cfg == null) { srActive = false; return null }
         if (cfg.key != srKey) {
+            srDrain()
             srStop()
             if (!native.srInit(context.assets, cfg.mw, cfg.mh, cfg.scale, cfg.srcW, cfg.srcH, cfg.cx, cfg.cy,
                     cfg.inS, cfg.inZp, cfg.outS, cfg.outZp, cfg.margin, cfg.ramp)) {
@@ -521,23 +541,63 @@ class FramePipeline(
             }
             sr = nb; srKey = cfg.key
         }
-        val b = sr ?: return null
-        val inB = native.srIn(); val outB = native.srOut()
-        if (inB == null || outB == null) { srNote = "lỗi bộ nhớ SR: " + native.lastError(); return null }
-        val t0 = System.nanoTime()
-        if (!native.srPre(f.hardwareBuffer)) { srNote = "lỗi GPU (pre): " + native.lastError().take(60); srFailUntilMs = now + 3000; return null }
-        if (b.run(inB, outB) < 0f) { srNote = "lỗi NPU: " + b.lastError.take(60); srFailUntilMs = now + 3000; return null }
-        val slot = srCounter++ and 7
-        val tok = srTokens[slot]
-        if (!native.srPost(f.hardwareBuffer, tok, slot)) { srNote = "lỗi GPU (post): " + native.lastError().take(60); srFailUntilMs = now + 3000; return null }
-        srMsEma.add((System.nanoTime() - t0) / 1e6f)
-        srActive = true
-        upscaleLabel = if (mode == 1) "UPSCALE ×2 → ${f.width * 2}×${f.height * 2}" else "UPSCALE ×1 (vùng ${cfg.mw}×${cfg.mh})"
-        srNote = "%s %.1f ms (vào %.1f/chạy %.1f/ra %.1f)".format(if (mode == 1) "×2 NPU" else "×1 NPU", srMsEma.value, b.copyInMs, b.runMs, b.copyOutMs)
-        return tok
+        return cfg
+    }
+
+    private fun srRunNpu(b: SrBackend, inB: java.nio.ByteBuffer, outB: java.nio.ByteBuffer): Float =
+        b.run(inB, outB) { srInFree.release() }
+
+    private fun srLoop() {
+        while (running) {
+            val j = srQueue.poll(200, TimeUnit.MILLISECONDS) ?: continue
+            val b = sr
+            val inB = native.srIn(); val outB = native.srOut()
+            var tok: HardwareBuffer? = null
+            val t0 = System.nanoTime()
+            try {
+                if (b == null || inB == null || outB == null) { srInFree.release(); srNote = "SR chưa sẵn sàng" }
+                else if (srRunNpu(b, inB, outB) < 0f) {
+                    srNote = "lỗi NPU: " + b.lastError.take(60); srFailUntilMs = android.os.SystemClock.elapsedRealtime() + 3000
+                } else {
+                    val slot = srCounter++ and 7
+                    val t = srTokens[slot]
+                    if (native.srPost(j.frame.hardwareBuffer, t, slot)) tok = t
+                    else { srNote = "lỗi GPU (post): " + native.lastError().take(60); srFailUntilMs = android.os.SystemClock.elapsedRealtime() + 3000 }
+                }
+            } catch (t: Throwable) {
+                srNote = "SR: " + t.javaClass.simpleName
+                Log.e(TAG, "ff-sr", t)
+            }
+            j.job.seq = -1L            // GPU/NPU đã dùng xong khung chụp này: được trả lại cho capture
+            if (tok != null) {
+                srMsEma.add((System.nanoTime() - t0) / 1e6f)
+                srActive = true
+                upscaleLabel = if (j.mode == 1) "UPSCALE ×2 → ${j.frame.width * 2}×${j.frame.height * 2}" else "UPSCALE ×1 (vùng giữa)"
+                srNote = "%s %.1f ms (vào %.1f/chạy %.1f/ra %.1f)".format(if (j.mode == 1) "×2 NPU" else "×1 NPU", srMsEma.value, b!!.copyInMs, b.runMs, b.copyOutMs)
+                presentQueue.put(tok)
+            } else {
+                srActive = false
+                srInflight.release()
+            }
+        }
+    }
+
+    private fun presentLoop() {
+        while (running) {
+            val tok = presentQueue.poll(200, TimeUnit.MILLISECONDS) ?: continue
+            try {
+                if (native.presentReal(tok)) { stats.outFps.tick(); stats.framesInterp.incrementAndGet(); lastError = "" }
+                else lastError = native.lastError()
+            } catch (t: Throwable) {
+                lastError = t.javaClass.simpleName
+                Log.e(TAG, "ff-present", t)
+            }
+            srInflight.release()
+        }
     }
 
     private fun upscaleOnly(st: com.fluidframes.overlay.FluidSettings, cur: FrameSlot) {
+        usedJob = lastSrJob?.job    // khung trước chỉ được trả lại sau khi khung SR gần nhất xong
         if (!st.enabled) { passthrough(cur); return }
         passthroughStreak = 0
         setOverlay(true)
@@ -546,21 +606,32 @@ class FramePipeline(
             native.configure(w, h)
         }
         val t0 = System.nanoTime()
-        val tok = srRun(st.upscale, cur)
-        if (tok != null) {
-            if (native.presentReal(tok)) { stats.outFps.tick(); stats.framesInterp.incrementAndGet(); lastError = "" }
-            else { lastError = native.lastError(); presentOnly(cur) }
-        } else presentOnly(cur)
+        val cfg = srPrepare(st.upscale, cur)
+        if (cfg == null) { presentOnly(cur); return }
+        // Dây chuyền đầy: bỏ khung này (khung cũ nhất đang chờ sẽ được trả lại sau khi khung trước xong), không chen hàng.
+        if (!srInflight.tryAcquire()) { stats.framesSkipped.incrementAndGet(); usedJob = lastSrJob?.job; return }
+        if (!srInFree.tryAcquire(30, TimeUnit.MILLISECONDS)) {
+            srInflight.release(); stats.framesSkipped.incrementAndGet(); usedJob = lastSrJob?.job; return
+        }
+        if (!native.srPre(cur.hardwareBuffer)) {
+            srInFree.release(); srInflight.release()
+            srNote = "lỗi GPU (pre): " + native.lastError().take(60); srFailUntilMs = android.os.SystemClock.elapsedRealtime() + 3000
+            presentOnly(cur); return
+        }
+        val job = SrJob(cur, NnJob(cur, cur, -1), st.upscale)
+        usedJob = job.job
+        lastSrJob = job
         lastMode = Mode.PASSTHROUGH
         stats.captureMs.add(((t0 - cur.arrivedNs) / 1e6f).coerceAtLeast(0f))
         stats.workMs.add((System.nanoTime() - t0) / 1e6f)
+        srQueue.put(job)
     }
 
     private fun process(prev: FrameSlot?, cur: FrameSlot) {
         val st = settings()
         applyTune(st)
         applyEnnPower(st)
-        if (st.upscale == 0 && (sr != null || srNote.isNotEmpty())) srStop()
+        if (st.upscale == 0 && (sr != null || srNote.isNotEmpty())) { srDrain(); srStop() }
         if (st.npuPrecision != wantPrec) { wantPrec = st.npuPrecision; failLong = 0 }
         // Chỉ nội suy app đã bật. Chưa nhận ra app (chưa bật Trợ năng) thì cứ nội suy như cũ.
         if (st.onlyEnabledApps) {
