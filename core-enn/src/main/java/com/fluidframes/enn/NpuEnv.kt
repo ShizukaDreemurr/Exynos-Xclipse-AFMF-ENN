@@ -125,4 +125,42 @@ object NpuEnv {
         } catch (t: Throwable) { "${t.javaClass.simpleName}: ${(t.message ?: "").take(120)}" }
         finally { try { e?.close() } catch (_: Throwable) {} }
     }
+
+    /**
+     * Đo tốc độ model super-resolution/làm nét: ms vào / chạy NPU / ra, ở giao diện float32 hoặc int8.
+     * [inCh]/[outCh]: số kênh vào/ra; [w]x[h]: kích thước đầu vào.
+     */
+    fun srBench(context: Context, assetName: String, w: Int, h: Int, outCh: Int, int8io: Boolean, s: Strategy): String {
+        val e = create(context, s.env)
+        return try {
+            val m = load(context, assetName, s, e)
+            try {
+                val ins = m.createInputBuffers(); val outs = m.createOutputBuffers()
+                val inF = FloatArray(3 * w * h) { ((it * 31) % 255) / 255f }
+                val inB = ByteArray(3 * w * h) { (((it * 31) % 255) - 128).toByte() }
+                val ms = ins[0].javaClass.methods
+                val wI8 = ms.firstOrNull { it.name == "writeInt8" && it.parameterTypes.size == 1 && it.parameterTypes[0] == ByteArray::class.java }
+                val rI8 = outs[0].javaClass.methods.firstOrNull { it.name == "readInt8" && it.parameterTypes.isEmpty() }
+                if (int8io && (wI8 == null || rI8 == null)) return "không có writeInt8/readInt8 trong TensorBuffer (${ms.map { it.name }.filter { it.startsWith("write") || it.startsWith("read") }.distinct().joinToString(",")})"
+                fun once(): Triple<Long, Long, Long> {
+                    val t0 = System.nanoTime()
+                    if (int8io) wI8!!.invoke(ins[0], inB) else ins[0].writeFloat(inF)
+                    val t1 = System.nanoTime(); m.run(ins, outs)
+                    val t2 = System.nanoTime()
+                    if (int8io) rI8!!.invoke(outs[0]) else outs[0].readFloat()
+                    val t3 = System.nanoTime()
+                    return Triple(t1 - t0, t2 - t1, t3 - t2)
+                }
+                repeat(3) { once() }
+                var a = 0L; var b = 0L; var c = 0L; val n = 20
+                repeat(n) { val (x, y, z) = once(); a += x; b += y; c += z }
+                ins.forEach { it.close() }; outs.forEach { it.close() }
+                val bytes = if (int8io) 1 else 4
+                "OK vào %.2f · chạy %.2f · ra %.2f · cả %.2f ms (vào %.1f MB, ra %.1f MB)".format(
+                    a / n / 1e6, b / n / 1e6, c / n / 1e6, (a + b + c) / n / 1e6,
+                    3f * w * h * bytes / 1e6, outCh.toFloat() * w * h * bytes / 1e6)
+            } finally { try { m.close() } catch (_: Throwable) {} }
+        } catch (t: Throwable) { "${t.javaClass.simpleName}: ${(t.message ?: "").take(120)}" }
+        finally { try { e?.close() } catch (_: Throwable) {} }
+    }
 }

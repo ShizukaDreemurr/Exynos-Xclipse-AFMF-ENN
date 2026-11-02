@@ -108,6 +108,27 @@ object NpuDiagnostics {
             rows += Row("Warp gather $ls (${wh.first}x${wh.second})", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
         }
 
+        // 5d. Super-resolution x2 và làm nét x1 (model thử nghiệm, để đo xem NPU gánh nổi bao nhiêu)
+        run {
+            val srSizes = listOf("x2" to listOf("640x288", "960x432", "1152x528"), "x1" to listOf("640x288", "1152x528", "1536x704"))
+            for ((mode, szs) in srSizes) for (sz in szs) for (net in listOf("s16", "m32")) for (io in listOf("f32", "i8")) {
+                val a = "models/sr_${mode}_${sz}_${net}_$io.tflite"
+                val has = try { context.assets.open(a).close(); true } catch (_: Throwable) { false }
+                if (!has) continue
+                val (w, h) = sz.split("x").map { it.toInt() }
+                val r = NpuEnv.srBench(context, a, w, h, if (mode == "x2") 12 else 3, io == "i8", NpuEnv.strategies.first())
+                rows += Row("SR $mode $sz $net $io", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
+            }
+            // thăm dò DEPTH_TO_SPACE trên NPU
+            for (io in listOf("f32", "i8")) {
+                val a = "models/sr_x2_640x288_s16_${io}_d2s.tflite"
+                val has = try { context.assets.open(a).close(); true } catch (_: Throwable) { false }
+                if (!has) continue
+                val r = NpuEnv.srBench(context, a, 640, 288, 3 * 4, io == "i8", NpuEnv.strategies.first())
+                rows += Row("SR x2 DEPTH_TO_SPACE 640x288 s16 $io", if (r.startsWith("OK")) Level.OK else Level.FAIL, r)
+            }
+        }
+
         // 6. Đo tốc độ
         var ms640: Float? = null
         if (benchmark && works) {

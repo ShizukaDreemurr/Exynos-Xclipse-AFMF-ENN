@@ -2,7 +2,7 @@ name: aot-compile-model
 on:
   workflow_dispatch:
   push:
-    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py', 'models/make_quant_models.py', 'models/calib/**', 'models/ifrnet_coarse.py', 'models/op_probes.py', 'models/weights/**']
+    paths: ['.github/workflows/aot-model.yml', 'models/make_test_model.py', 'models/make_quant_models.py', 'models/make_sr_models.py', 'models/calib/**', 'models/ifrnet_coarse.py', 'models/op_probes.py', 'models/weights/**']
 permissions:
   contents: write
 jobs:
@@ -46,6 +46,12 @@ jobs:
           pip install -q opencv-python-headless > /dev/null 2>&1 || true
           LD_PRELOAD=$SHIM python make_quant_models.py --ifr weights/IFRNet_S_Vimeo90K.pth --compile > /tmp/q.log 2>&1 || true
           echo "::notice title=quant::$(tr "\r" "\n" < /tmp/q.log | grep QRESULT | cut -c1-200 | tr '\n' '|')"
+      - name: Model super-resolution / làm nét (đo tốc độ NPU)
+        working-directory: models
+        continue-on-error: true
+        run: |
+          LD_PRELOAD=$SHIM python make_sr_models.py --compile > /tmp/sr.log 2>&1 || true
+          echo "::notice title=sr::$(tr "\r" "\n" < /tmp/sr.log | grep SRRESULT | cut -c1-160 | tr '\n' '|')"
       - name: Publish compiled models
         if: success()
         run: |
@@ -53,6 +59,7 @@ jobs:
           for n in 192 256 320 384 480 640 960 1280 probe_nchw probe_nhwc; do f=$(find out_models/c$n -name '*Samsung*' -name '*.tflite' | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
           for n in op_resize op_gather op_gather_warp op_gather_nd op_shift25 op_gwarp_640 op_gwarp_960 op_gwarp_1280; do f=$(find out_ops/c_${n}_1 out_ops/c_${n}_0 -name '*Samsung*' -name '*.tflite' 2>/dev/null | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_$n.tflite; done
           for n in 192 256 320 384 480 640 960 1280; do for k in fp16 int8; do f=$(find out_quant/c${n}_${k} -name '*Samsung*' -name '*.tflite' 2>/dev/null | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/flow_${n}_${k}.tflite; done; done
+          for d in out_sr/c_*; do [ -d "$d" ] || continue; n=${d#out_sr/c_}; f=$(find "$d" -name '*Samsung*' -name '*.tflite' 2>/dev/null | head -1); [ -n "$f" ] && cp "$f" /tmp/pm/models/sr_$n.tflite; done
           ls -l /tmp/pm/models
           cd /tmp/pm && git init -q && git checkout -q -b prebuilt-models
           git config user.name ci; git config user.email ci@example.com
