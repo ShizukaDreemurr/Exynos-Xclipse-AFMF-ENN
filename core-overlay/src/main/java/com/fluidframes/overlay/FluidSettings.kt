@@ -30,7 +30,7 @@ data class FluidSettings(
     val onlyEnabledApps: Boolean = true,
     val enabledApps: Set<String> = emptySet(),
     /** Dòng HUD hiển thị (bitmask, xem HudLines). */
-    val hudLines: Int = HudLines.ALL,
+    val hudLines: Int = HudLines.COMPACT,
     /** Cỡ chữ HUD (%). */
     val hudScale: Int = 100,
     /** Độ đậm nền HUD (%). */
@@ -55,6 +55,10 @@ object HudLines {
     const val POWER = 256
     const val ERROR = 512
     const val LOAD = 1024
+    /** Gọn: chế độ/FPS, GPU hay NPU + model + độ phân giải, điện, nhiệt pin, CPU/GPU % và MHz, lỗi. */
+    const val COMPACT = FPS or BACKEND or POWER or LOAD or ERROR
+    /** Vừa: gọn + thời gian từng bước + frame time/rớt/nhiệt máy. */
+    const val MEDIUM = COMPACT or STAGES or WORK
     const val ALL = 2047 and CAPTURE.inv() and LOOP.inv()   // mặc định gọn: bỏ dòng kỹ thuật (chờ/process và capture)
 }
 
@@ -77,7 +81,7 @@ class SettingsStore(context: Context) {
         hudProtect = prefs.getBoolean("hudprot", true),
         onlyEnabledApps = prefs.getBoolean("onlyapps", true),
         enabledApps = prefs.getStringSet("apps_on", emptySet())?.toSet() ?: emptySet(),
-        hudLines = prefs.getInt("hud_lines", HudLines.ALL),
+        hudLines = prefs.getInt("hud_lines", HudLines.COMPACT),
         hudScale = prefs.getInt("hud_scale", 100),
         hudAlpha = prefs.getInt("hud_alpha", 67),
         hudAnchor = prefs.getInt("hud_anchor", 0),

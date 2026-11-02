@@ -91,7 +91,7 @@ class ProjectionService : Service() {
                     val pw = powerLine()
                     if (pw.isNotEmpty()) txt = if (txt.isEmpty()) pw else txt + "\n" + pw
                 }
-                hzWatch().let { h -> if (h.isNotEmpty() && mask and com.fluidframes.overlay.HudLines.HZ != 0) txt = if (txt.isEmpty()) h else txt + "\n" + h }
+                hzWatch()   // vẫn ép tần số quét ở nền, nhưng không hiện dòng "Ép Hz" trên HUD nữa
                 if (mask and com.fluidframes.overlay.HudLines.LOAD != 0) sysLoad.rows().joinToString("\n").let { txt = if (txt.isEmpty()) it else txt + "\n" + it }
                 readPower()?.let { p ->
                     bench.noteTemp(p.tmp)

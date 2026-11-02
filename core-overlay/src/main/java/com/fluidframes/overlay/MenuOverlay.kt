@@ -179,6 +179,11 @@ class MenuOverlay(
         col.addView(ui.toggleRow("HUD số liệu", { settings.showHud }) {
             settings = settings.copy(showHud = it); onChange(settings)
         })
+        col.addView(ui.caption("Mức chi tiết HUD (Gọn: GPU/NPU, model, độ phân giải, FPS, điện, nhiệt, CPU/GPU %)"))
+        val hudPresets = listOf(HudLines.COMPACT, HudLines.MEDIUM, HudLines.ALL)
+        col.addView(ui.segmented(listOf("Gọn", "Vừa", "Đầy đủ"), hudPresets.indexOf(settings.hudLines).coerceAtLeast(0)) {
+            settings = settings.copy(hudLines = hudPresets[it]); onChange(settings)
+        })
         col.addView(ui.caption("Tùy chỉnh HUD — dòng hiển thị"))
         for ((bit, name) in HUD_ROWS) {
             col.addView(ui.toggleRow(name, { settings.hudLines and bit != 0 }) {

@@ -148,7 +148,7 @@ fun SettingsScreen(settings: FluidSettings, running: Boolean, onChange: (FluidSe
                 }
                 Spacer(Modifier.height(10.dp))
                 Text("Overlay xin hệ thống chạy đúng tần số này, và (nếu đã cấp quyền bên dưới) ép luôn trên toàn hệ thống trong lúc dịch vụ chạy. " +
-                    "Nếu game kéo màn hình về 60Hz, app tự ép lại liên tục (xem dòng Ép Hz trên HUD).",
+                    "Nếu game kéo màn hình về 60Hz, app tự ép lại liên tục.",
                     style = MaterialTheme.typography.bodyMedium, color = FF.c.muted)
                 Spacer(Modifier.height(10.dp))
                 val ctx = LocalContext.current

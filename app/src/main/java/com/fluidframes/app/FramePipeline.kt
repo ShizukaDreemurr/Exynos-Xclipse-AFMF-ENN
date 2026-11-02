@@ -106,9 +106,9 @@ class FramePipeline(
         if (on(1)) {
             lines += "Xclipse ENN-SS"
             lines += r("Bản", BuildConfig.BUILD_TAG, "")
-            lines += r("Chế độ", lastMode.name + " " + tierLabel(lastTier), if (lastMode.name.contains("PASS", true)) Y else G)
         }
         if (on(2)) {
+            lines += r("Chế độ", lastMode.name + " " + tierLabel(lastTier), if (lastMode.name.contains("PASS", true)) Y else G)
             lines += r("FPS gốc", "%.0f".format(src), "")
             lines += r("FPS xuất", "%.0f".format(out), if (out >= curHz() * 0.9f) G else if (out >= curHz() * 0.6f) Y else R)
         }
