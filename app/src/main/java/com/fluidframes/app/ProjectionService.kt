@@ -159,8 +159,11 @@ class ProjectionService : Service() {
             },
             initial = store.load(),
             onSettings = {
-                val oldHz = store.load().targetHz
+                val old = store.load()
+                val oldHz = old.targetHz
                 store.save(it)
+                // Đổi độ phân giải chụp: áp dụng ngay (resize VirtualDisplay), không cần Bắt đầu lại.
+                if (it.outLongSide != old.outLongSide) engine?.reconfigure(CaptureConfig.fromContext(this, it.outLongSide))
                 if (it.targetHz != oldHz) {
                     if (it.targetHz > 0) RefreshForce.apply(this, it.targetHz.toFloat()) else RefreshForce.restore(this)
                 }

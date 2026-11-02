@@ -145,6 +145,11 @@ class MenuOverlay(
         col.addView(ui.dropdown(listOf("Tự động (INT8→FP16→FP32)", "INT8", "FP16", "FP32"), settings.npuPrecision.coerceIn(0, 3)) {
             settings = settings.copy(npuPrecision = it); onChange(settings)
         })
+        col.addView(ui.caption("Độ phân giải chụp màn hình (thấp hơn = GPU nhẹ hơn, nhưng chữ/HUD của game mờ hơn)"))
+        val outOpts = listOf(0, 1920, 1560, 1280)
+        col.addView(ui.segmented(listOf("Gốc", "1920", "1560", "1280"), outOpts.indexOf(settings.outLongSide).coerceAtLeast(0)) {
+            settings = settings.copy(outLongSide = outOpts[it]); onChange(settings)
+        })
         col.addView(ui.caption("Điện NPU (Tiết kiệm = hạ xung NPU, ít điện hơn, hơi chậm hơn)"))
         col.addView(ui.segmented(listOf("Mặc định", "Cân bằng", "Tiết kiệm"), settings.npuPower.coerceIn(0, 2)) {
             settings = settings.copy(npuPower = it); onChange(settings)
