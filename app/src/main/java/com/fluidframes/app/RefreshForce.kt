@@ -30,23 +30,27 @@ object RefreshForce {
         } catch (t: Throwable) { Log.w(TAG, "apply", t); false }
     }
 
-    @Volatile var reassertCount = 0; private set
+    @Volatile var reassertCount = 0; private set      // số lần ép THÀNH CÔNG
+    @Volatile var attempts = 0; private set           // số lần đã thử
+    @Volatile var lastError = ""; private set
     @Volatile private var lastReassertMs = 0L
 
-    /** Ép lại: đổi giá trị rồi đặt về mục tiêu để chắc chắn hệ thống tính lại (đặt cùng giá trị thì không có thông báo). */
+    /** Ép lại: đổi giá trị rồi đặt về mục tiêu để hệ thống tính lại (đặt cùng giá trị thì không có thông báo). */
     fun reassert(c: Context, hz: Float): Boolean {
-        if (!canForce(c)) return false
         val now = android.os.SystemClock.elapsedRealtime()
-        if (now - lastReassertMs < 400) return false   // tránh dồn dập
+        if (now - lastReassertMs < 250) return false   // tránh dồn dập
         lastReassertMs = now
-        return try {
-            val r = c.contentResolver
+        attempts++
+        val r = c.contentResolver
+        // 1) Cài đặt hệ thống (cần quyền WRITE_SETTINGS hoặc WRITE_SECURE_SETTINGS)
+        val ok = try {
             Settings.System.putFloat(r, "peak_refresh_rate", hz + 1f)
             Settings.System.putFloat(r, "min_refresh_rate", hz)
             Settings.System.putFloat(r, "peak_refresh_rate", hz)
-            reassertCount++
             true
-        } catch (t: Throwable) { Log.w(TAG, "reassert", t); false }
+        } catch (t: Throwable) { lastError = t.javaClass.simpleName + ": " + (t.message ?: "").take(60); Log.w(TAG, "reassert", t); false }
+        if (ok) { reassertCount++; lastError = "" }
+        return ok
     }
 
     /** Giá trị cài đặt liên quan tần số quét, để biết cái gì đang ép (hiện trên HUD/chẩn đoán). */

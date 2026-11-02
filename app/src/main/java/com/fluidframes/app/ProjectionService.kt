@@ -48,6 +48,9 @@ class ProjectionService : Service() {
     private var pipeline: FramePipeline? = null
     private val main = Handler(Looper.getMainLooper())
     private val sysLoad = SysLoad()
+    private val hzTick = object : Runnable {
+        override fun run() { if (overlay != null) try { hzWatch() } catch (_: Throwable) {}; main.postDelayed(this, 250) }
+    }
     private var hzLowSince = 0L
     private var hzFixCount = 0
     /** Game kéo tần số quét xuống thấp hơn mục tiêu => ép lại liên tục (hệ thống + bỏ phiếu overlay). */
@@ -67,15 +70,13 @@ class ProjectionService : Service() {
         val can = RefreshForce.canForce(this)
         val now = android.os.SystemClock.elapsedRealtime()
         if (cur in 1f..(want - 1f)) {
-            if (hzLowSince == 0L) hzLowSince = now
-            if (now - hzLowSince >= 500) {   // thấp liên tục >0,5s mới can thiệp
-                if (RefreshForce.reassert(this, want.toFloat())) hzFixCount++
-                overlay?.revoteRefresh()
-                hzLowSince = now
-            }
-        } else hzLowSince = 0L
+            // Thấp hơn mục tiêu: ép lại NGAY mỗi lượt (không chờ), kèm bỏ phiếu overlay.
+            if (RefreshForce.reassert(this, want.toFloat())) hzFixCount++
+            if (now - hzLowSince >= 2000 || hzLowSince == 0L) { overlay?.revoteRefresh(); hzLowSince = now }   // bỏ phiếu overlay tối đa 2s/lần
+        }
         val perm = if (can) "" else " · THIẾU quyền Sửa đổi cài đặt hệ thống"
-        return com.fluidframes.overlay.HudOverlay.row("Ép Hz", "%.0f→%d · ép lại %d lần%s".format(cur, want, hzFixCount, perm),
+        return com.fluidframes.overlay.HudOverlay.row("Ép Hz", "%.0f→%d · thử %d, được %d%s%s".format(cur, want, RefreshForce.attempts, RefreshForce.reassertCount, perm,
+            if (RefreshForce.lastError.isNotEmpty()) " · LỖI " + RefreshForce.lastError else ""),
             if (cur >= want - 1f) com.fluidframes.overlay.HudOverlay.G else com.fluidframes.overlay.HudOverlay.R)
     }
     private val hudTick = object : Runnable {
@@ -216,6 +217,7 @@ class ProjectionService : Service() {
         fp.start()
         running.value = true
         main.post(hudTick)
+        main.post(hzTick)
         if (!host.trusted) {
             Toast.makeText(this, "Chưa bật Trợ năng: overlay bị giới hạn 80% độ mờ (hình trộn với game)", Toast.LENGTH_LONG).show()
         }
@@ -272,6 +274,7 @@ class ProjectionService : Service() {
 
     override fun onDestroy() {
         main.removeCallbacks(hudTick)
+        main.removeCallbacks(hzTick)
         RefreshForce.restore(this)
         running.value = false
         live.value = null
