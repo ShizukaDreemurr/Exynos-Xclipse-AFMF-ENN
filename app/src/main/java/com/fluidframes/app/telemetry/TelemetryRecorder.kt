@@ -247,6 +247,8 @@ object TelemetryRecorder {
         try {
             val d = app.getSystemService(DisplayManager::class.java).getDisplay(Display.DEFAULT_DISPLAY)
             m["man_hz"] = d.refreshRate.toDouble()
+            m["ep_hz_lan"] = com.fluidframes.app.RefreshForce.reassertCount
+            m["ep_hz_cai_dat"] = com.fluidframes.app.RefreshForce.dump(app)
         } catch (_: Throwable) {}
 
         // --- nhiệt / pin

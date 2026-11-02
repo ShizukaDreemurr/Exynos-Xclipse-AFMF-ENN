@@ -90,6 +90,23 @@ class VideoOverlay(private val host: OverlayHost, private val listener: Listener
         }
     }
 
+    /** Bỏ phiếu lại tần số quét (khi game kéo về 60Hz): đặt lại frame rate của surface và preferred mode của cửa sổ. */
+    fun revote() {
+        main.post {
+            val v = view ?: return@post
+            runCatching { v.holder.surface.takeIf { it.isValid }?.setFrameRate(targetMode()?.refreshRate ?: 60f, Surface.FRAME_RATE_COMPATIBILITY_FIXED_SOURCE, Surface.CHANGE_FRAME_RATE_ALWAYS) }
+            runCatching {
+                val lp = v.layoutParams as? WindowManager.LayoutParams ?: return@runCatching
+                targetMode()?.let { m ->
+                    lp.preferredDisplayModeId = 0; lp.preferredRefreshRate = 0f
+                    host.windowManager.updateViewLayout(v, lp)
+                    lp.preferredDisplayModeId = m.modeId; lp.preferredRefreshRate = m.refreshRate
+                    host.windowManager.updateViewLayout(v, lp)
+                }
+            }
+        }
+    }
+
     fun setVisible(visible: Boolean) {
         main.post { view?.visibility = if (visible) View.VISIBLE else View.GONE }
     }

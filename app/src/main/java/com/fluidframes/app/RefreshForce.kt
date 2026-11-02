@@ -30,6 +30,33 @@ object RefreshForce {
         } catch (t: Throwable) { Log.w(TAG, "apply", t); false }
     }
 
+    @Volatile var reassertCount = 0; private set
+    @Volatile private var lastReassertMs = 0L
+
+    /** Ép lại: đổi giá trị rồi đặt về mục tiêu để chắc chắn hệ thống tính lại (đặt cùng giá trị thì không có thông báo). */
+    fun reassert(c: Context, hz: Float): Boolean {
+        if (!canForce(c)) return false
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastReassertMs < 400) return false   // tránh dồn dập
+        lastReassertMs = now
+        return try {
+            val r = c.contentResolver
+            Settings.System.putFloat(r, "peak_refresh_rate", hz + 1f)
+            Settings.System.putFloat(r, "min_refresh_rate", hz)
+            Settings.System.putFloat(r, "peak_refresh_rate", hz)
+            reassertCount++
+            true
+        } catch (t: Throwable) { Log.w(TAG, "reassert", t); false }
+    }
+
+    /** Giá trị cài đặt liên quan tần số quét, để biết cái gì đang ép (hiện trên HUD/chẩn đoán). */
+    fun dump(c: Context): String = try {
+        val r = c.contentResolver
+        "min=%.0f peak=%.0f mode=%s".format(
+            Settings.System.getFloat(r, "min_refresh_rate", 0f), Settings.System.getFloat(r, "peak_refresh_rate", 0f),
+            Settings.Secure.getString(r, "refresh_rate_mode") ?: Settings.System.getString(r, "refresh_rate_mode") ?: "?")
+    } catch (_: Throwable) { "?" }
+
     fun restore(c: Context) {
         val s = saved ?: return
         try {

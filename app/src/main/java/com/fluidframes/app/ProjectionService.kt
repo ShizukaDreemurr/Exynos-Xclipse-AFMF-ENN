@@ -48,6 +48,36 @@ class ProjectionService : Service() {
     private var pipeline: FramePipeline? = null
     private val main = Handler(Looper.getMainLooper())
     private val sysLoad = SysLoad()
+    private var hzLowSince = 0L
+    private var hzFixCount = 0
+    /** Game kéo tần số quét xuống thấp hơn mục tiêu => ép lại liên tục (hệ thống + bỏ phiếu overlay). */
+    private fun hzWatch(): String {
+        val st = overlay?.settings ?: return ""
+        // Chỉ canh khi app đang ở trước là app đã bật nội suy (không ép Hz cho app khác).
+        if (st.onlyEnabledApps) {
+            val fg = com.fluidframes.app.telemetry.TelemetryRecorder.foreground()
+            if (fg.isNotEmpty() && fg !in st.enabledApps) { hzLowSince = 0L; return "" }
+        }
+        val disp = try { getSystemService(android.hardware.display.DisplayManager::class.java).getDisplay(android.view.Display.DEFAULT_DISPLAY) } catch (_: Throwable) { null } ?: return ""
+        // "Cao nhất" (0) = tần số cao nhất của chế độ màn hình hiện tại.
+        val want = if (st.targetHz > 0) st.targetHz else disp.supportedModes
+            .filter { it.physicalWidth == disp.mode.physicalWidth && it.physicalHeight == disp.mode.physicalHeight }
+            .maxOfOrNull { it.refreshRate.toInt() } ?: return ""
+        val cur = disp.refreshRate
+        val can = RefreshForce.canForce(this)
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (cur in 1f..(want - 1f)) {
+            if (hzLowSince == 0L) hzLowSince = now
+            if (now - hzLowSince >= 500) {   // thấp liên tục >0,5s mới can thiệp
+                if (RefreshForce.reassert(this, want.toFloat())) hzFixCount++
+                overlay?.revoteRefresh()
+                hzLowSince = now
+            }
+        } else hzLowSince = 0L
+        val perm = if (can) "" else " · THIẾU quyền Sửa đổi cài đặt hệ thống"
+        return com.fluidframes.overlay.HudOverlay.row("Ép Hz", "%.0f→%d · ép lại %d lần%s".format(cur, want, hzFixCount, perm),
+            if (cur >= want - 1f) com.fluidframes.overlay.HudOverlay.G else com.fluidframes.overlay.HudOverlay.R)
+    }
     private val hudTick = object : Runnable {
         override fun run() {
             pipeline?.let {
@@ -58,6 +88,7 @@ class ProjectionService : Service() {
                     val pw = powerLine()
                     if (pw.isNotEmpty()) txt = if (txt.isEmpty()) pw else txt + "\n" + pw
                 }
+                hzWatch().let { h -> if (h.isNotEmpty() && mask and com.fluidframes.overlay.HudLines.HZ != 0) txt = if (txt.isEmpty()) h else txt + "\n" + h }
                 if (mask and com.fluidframes.overlay.HudLines.LOAD != 0) sysLoad.rows().joinToString("\n").let { txt = if (txt.isEmpty()) it else txt + "\n" + it }
                 readPower()?.let { p ->
                     bench.noteTemp(p.tmp)

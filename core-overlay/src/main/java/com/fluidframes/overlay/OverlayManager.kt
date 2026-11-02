@@ -46,6 +46,8 @@ class OverlayManager(
 
     fun setVideoVisible(visible: Boolean) = video.setVisible(visible)
 
+    fun revoteRefresh() = video.revote()
+
     fun setHudText(text: String) = hud.setText(text)
 
     private fun applySettings(new: FluidSettings) {
