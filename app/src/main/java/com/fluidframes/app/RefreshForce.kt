@@ -72,13 +72,21 @@ object RefreshForce {
     fun apply(c: Context, hz: Float): Boolean = write(c.contentResolver, hz, false)
 
     /** Ép lại (giới hạn tần suất). */
+    /** Cả ba bảng đều bị từ chối vì thiếu quyền hệ thống: ngừng thử (đỡ tốn CPU) cho tới khi quyền được cấp. */
+    val blocked: Boolean get() = failStreak >= 6 &&
+        c0?.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED
+    private var failStreak = 0
+    private var c0: Context? = null
+
     fun reassert(c: Context, hz: Float): Boolean {
+        c0 = c.applicationContext
+        if (blocked) return false
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastReassertMs < 250) return false
         lastReassertMs = now
         attempts++
         val ok = write(c.contentResolver, hz, true)
-        if (ok) reassertCount++
+        if (ok) { reassertCount++; failStreak = 0 } else failStreak++
         return ok
     }
 

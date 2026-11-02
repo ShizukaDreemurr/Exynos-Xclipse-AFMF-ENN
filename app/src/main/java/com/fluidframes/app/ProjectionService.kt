@@ -74,6 +74,7 @@ class ProjectionService : Service() {
             if (RefreshForce.reassert(this, want.toFloat())) hzFixCount++
             if (now - hzLowSince >= 2000 || hzLowSince == 0L) { overlay?.revoteRefresh(); hzLowSince = now }   // bỏ phiếu overlay tối đa 2s/lần
         }
+        if (RefreshForce.blocked) return com.fluidframes.overlay.HudOverlay.row("Ép Hz", "%.0f (game giữ, cần quyền hệ thống để ép lên %d)".format(cur, want), com.fluidframes.overlay.HudOverlay.Y)
         val perm = if (can) "" else " · THIẾU quyền Sửa đổi cài đặt hệ thống"
         return com.fluidframes.overlay.HudOverlay.row("Ép Hz", "%.0f→%d · thử %d, được %d%s%s%s".format(cur, want, RefreshForce.attempts, RefreshForce.reassertCount,
             if (RefreshForce.space.isNotEmpty()) " (" + RefreshForce.space + ")" else "", perm,
