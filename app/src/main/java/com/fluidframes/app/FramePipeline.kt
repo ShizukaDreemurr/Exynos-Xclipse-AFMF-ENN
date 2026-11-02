@@ -442,7 +442,7 @@ class FramePipeline(
         val key = st.sensitivity * 2 + (if (st.hudProtect) 0 else 1)
         if (key == tuneKey) return
         tuneKey = key
-        val (sThr, oThr) = when (st.sensitivity) { 0 -> 0.03f to 0.10f; 2 -> 0.01f to 0.20f; else -> 0.02f to 0.14f }
+        val (sThr, oThr) = when (st.sensitivity) { 0 -> 0.03f to 0.10f; 2 -> 0.01f to 0.20f; 3 -> 0.003f to 0.28f; else -> 0.02f to 0.14f }
         native.setTune(sThr, oThr, if (st.hudProtect) 0 else 1)
     }
 

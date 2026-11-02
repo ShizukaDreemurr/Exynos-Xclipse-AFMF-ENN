@@ -148,7 +148,7 @@ class MenuOverlay(
             settings = settings.copy(backend = BACKENDS[it]); onChange(settings)
         })
         col.addView(ui.caption("Độ nhạy chuyển động"))
-        col.addView(ui.segmented(listOf("Thấp", "Vừa", "Cao"), settings.sensitivity.coerceIn(0, 2)) {
+        col.addView(ui.segmented(listOf("Thấp", "Vừa", "Cao", "Tối đa"), settings.sensitivity.coerceIn(0, 3)) {
             settings = settings.copy(sensitivity = it); onChange(settings)
         })
         col.addView(ui.toggleRow("Bảo vệ HUD / chữ đứng yên", { settings.hudProtect }) {
